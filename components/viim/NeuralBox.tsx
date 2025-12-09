@@ -105,6 +105,8 @@ export function NeuralBox({
   const [usageWarning, setUsageWarning] = useState<string | null>(null);
   const [modelQuery, setModelQuery] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<string>("+Agent");
   const thinkingMessages = useMemo(
     () => ["Thinking...", "Preparing response...", "Synthesizing...", "Almost there..."],
     []
@@ -508,67 +510,54 @@ export function NeuralBox({
               return (
                 <div
                   key={entry.id}
-                  className={`flex w-full ${isUser ? "justify-end" : "justify-center sm:justify-start"}`}
+                  className="flex w-full justify-center"
                 >
-                  <div
-                    className={`flex w-full max-w-[92%] flex-col gap-2 sm:max-w-[70%] ${
-                      isUser ? "items-end text-right" : "items-start text-left"
-                    }`}
-                  >
-                    <article
-                      className={`w-full rounded-[5px] border px-5 py-5 shadow-sm transition ${
-                        isUser
-                          ? "border-gray-200 bg-white text-gray-900"
-                          : "border-gray-100 bg-white text-gray-900"
-                      }`}
-                    >
-                      <div className="space-y-3 text-sm leading-7 text-gray-900">
+                  <div className="flex w-full max-w-5xl flex-col gap-3 px-2">
+                    <article className="w-full px-2 py-4">
+                      <div className="space-y-3 text-sm leading-7 text-gray-900 text-center">
                         <AnimatedContent text={entry.content} isUser={isUser} messageId={entry.id} />
                       </div>
                     </article>
-                    <div
-                      className={`flex flex-col gap-1 text-gray-400 ${
-                        isUser ? "items-end" : "items-start"
-                      }`}
-                    >
-                      <div className="flex flex-wrap gap-2">
-                        <button className="rounded-full p-1.5 hover:text-gray-900" aria-label="Copy">
+                    <div className="flex flex-col gap-2 w-full">
+                      <div className="flex flex-row flex-nowrap items-center justify-center gap-1 text-gray-400 overflow-x-auto">
+                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Copy">
                           <Clipboard className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900" aria-label="Thumbs up">
+                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Thumbs up">
                           <ThumbsUp className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900" aria-label="Thumbs down">
+                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Thumbs down">
                           <ThumbsDown className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900" aria-label="Reply">
+                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Reply">
                           <MessageSquarePlus className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900" aria-label="Regenerate">
+                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Regenerate">
                           <RefreshCcw className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900" aria-label="More options">
+                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="More options">
                           <MoreHorizontal className="h-3.5 w-3.5" />
                         </button>
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-gray-500">
-                        <span>
-                          {new Date(entry.timestamp).toLocaleTimeString([], {
+                        <span className="text-gray-600 whitespace-nowrap text-[11px] uppercase tracking-[0.2em] flex-shrink-0">
+                          {new Date(entry.timestamp).toLocaleString([], {
+                            month: "short",
+                            day: "2-digit",
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
                         </span>
                         {entry.model && (
-                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 normal-case tracking-[0.05em]">
+                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 text-[11px] normal-case tracking-[0.05em] whitespace-nowrap flex-shrink-0">
                             {entry.model}
                           </span>
                         )}
                         {entry.tokenCount !== undefined && (
-                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 normal-case tracking-[0.05em]">
+                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 text-[11px] normal-case tracking-[0.05em] whitespace-nowrap flex-shrink-0">
                             {entry.tokenCount} tokens
                           </span>
                         )}
                       </div>
+                      <hr className="border-t border-gray-200 w-full" />
                     </div>
                   </div>
                 </div>
@@ -623,6 +612,39 @@ export function NeuralBox({
             <div className="flex items-end gap-3">
               <div className="flex flex-1 flex-col items-stretch gap-3">
                 <div className="relative px-2 sm:px-0 min-h-[1px]">
+                  {/* Agent Menu */}
+                  <div
+                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-[5px] border border-gray-200 bg-white/95 px-3 py-3 transition-all duration-200 ${
+                      isAgentMenuOpen
+                        ? "translate-y-5 opacity-100 pointer-events-auto"
+                        : "translate-y-8 opacity-0 pointer-events-none"
+                    }`}
+                  >
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold sm:grid-cols-3">
+                      {["+Agent", "Code Agent", "Research Agent", "Creative Agent"].map((agent) => {
+                        const isActive = agent === selectedAgent;
+                        return (
+                          <button
+                            key={agent}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAgent(agent);
+                              setIsAgentMenuOpen(false);
+                            }}
+                            className={`rounded-[5px] border px-3 py-2 text-left tracking-[0.2em] transition ${
+                              isActive
+                                ? "border-gray-900 bg-gray-900 text-white"
+                                : "border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900"
+                            }`}
+                          >
+                            {agent}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Model Menu */}
                   <div
                     className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-[5px] border border-gray-200 bg-white/95 px-3 py-3 transition-all duration-200 ${
                       isModelMenuOpen
@@ -674,7 +696,7 @@ export function NeuralBox({
                     ref={textareaRef}
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
-                    placeholder={isVoiceMode ? "Voice mode active" : "What up?"}
+                    placeholder={isVoiceMode ? "Voice mode active" : "What can I do for you?"}
                     disabled={isVoiceMode || isProcessingInput}
                     rows={1}
                     className="w-full flex-1 resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
@@ -686,6 +708,14 @@ export function NeuralBox({
                     }}
                   />
                   <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-500">
+                    <button
+                      type="button"
+                      onClick={() => setIsAgentMenuOpen((prev) => !prev)}
+                      className="inline-flex max-w-[50%] items-center justify-center truncate rounded-full border border-gray-200 px-2 py-1 text-[9px] uppercase tracking-[0.25em] text-gray-500 transition hover:border-gray-400 sm:max-w-none"
+                      title={selectedAgent}
+                    >
+                      {selectedAgent}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsModelMenuOpen((prev) => !prev)}
