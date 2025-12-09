@@ -132,6 +132,7 @@ export async function appendConversationMessage(
   if (message.avatarType !== undefined) payload.avatarType = message.avatarType;
   if (message.avatarUrl !== undefined) payload.avatarUrl = message.avatarUrl ?? null;
   if (message.model !== undefined) payload.model = message.model;
+  if (message.tokenCount !== undefined) payload.tokenCount = message.tokenCount;
 
   await addDoc(messagesRef, payload);
 

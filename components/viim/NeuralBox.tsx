@@ -111,6 +111,52 @@ export function NeuralBox({
   );
   const [thinkingIndex, setThinkingIndex] = useState(0);
 
+  const AnimatedContent = ({
+    text,
+    isUser,
+    messageId,
+  }: {
+    text: string;
+    isUser: boolean;
+    messageId: string;
+  }) => {
+    const [display, setDisplay] = useState(isUser ? text : "");
+    const doneRef = useRef(false);
+
+    useEffect(() => {
+      if (isUser) return;
+      if (doneRef.current) return;
+
+      const words = text.split(" ");
+      let idx = 0;
+      const interval = setInterval(() => {
+        idx++;
+        setDisplay(words.slice(0, idx).join(" "));
+        if (idx >= words.length) {
+          doneRef.current = true;
+          clearInterval(interval);
+        }
+      }, 25);
+
+      return () => clearInterval(interval);
+    }, [isUser, text]);
+
+    return (
+      <ReactMarkdown
+        components={{
+          p: ({ node, ...props }) => (
+            <p className="whitespace-pre-line text-gray-900" {...props} />
+          ),
+          li: ({ node, ...props }) => (
+            <li className="whitespace-pre-line text-gray-900" {...props} />
+          ),
+        }}
+      >
+        {display || " "}
+      </ReactMarkdown>
+    );
+  };
+
   useEffect(() => {
     if (state !== "processing") return;
     const id = setInterval(() => {
@@ -477,18 +523,7 @@ export function NeuralBox({
                       }`}
                     >
                       <div className="space-y-3 text-sm leading-7 text-gray-900">
-                        <ReactMarkdown
-                          components={{
-                            p: ({ node, ...props }) => (
-                              <p className="whitespace-pre-line text-gray-900" {...props} />
-                            ),
-                            li: ({ node, ...props }) => (
-                              <li className="whitespace-pre-line text-gray-900" {...props} />
-                            ),
-                          }}
-                        >
-                          {entry.content}
-                        </ReactMarkdown>
+                        <AnimatedContent text={entry.content} isUser={isUser} messageId={entry.id} />
                       </div>
                     </article>
                     <div
@@ -528,6 +563,11 @@ export function NeuralBox({
                             {entry.model}
                           </span>
                         )}
+                        {entry.tokenCount !== undefined && (
+                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 normal-case tracking-[0.05em]">
+                            {entry.tokenCount} tokens
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -536,8 +576,8 @@ export function NeuralBox({
             })}
 
           {state === "processing" && (
-            <article className="flex items-center gap-3 rounded-[28px] border border-gray-100 bg-gray-50/80 px-5 py-4 text-sm text-gray-600 shadow-sm">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-white">
+            <article className="flex items-center gap-3 rounded-[24px] border border-gray-100 bg-gray-50/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
                 <VIIMAnimation state="processing" size="xxs" />
               </div>
               {thinkingMessages[thinkingIndex]}

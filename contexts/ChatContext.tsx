@@ -52,7 +52,7 @@ interface ChatContextType {
   appendMessageToConversation: (
     role: "user" | "assistant",
     content: string,
-    options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string }
+    options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string; tokenCount?: number }
   ) => Promise<string | null>;
   preferences: {
     autoAdvance: boolean;
@@ -196,7 +196,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     async (
       role: "user" | "assistant",
       content: string,
-      options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string }
+      options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string; tokenCount?: number }
     ) => {
       const optimisticEntry: ConversationMessage = {
         id: nanoid(),
@@ -208,6 +208,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         avatarType: options?.avatarType,
         avatarUrl: options?.avatarUrl,
         model: options?.model ?? (role === "assistant" ? selectedModel : undefined),
+        tokenCount: options?.tokenCount,
       };
 
       if (!currentUser) {
@@ -232,6 +233,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           avatarType: options?.avatarType,
           avatarUrl: options?.avatarUrl,
           model: options?.model ?? (role === "assistant" ? selectedModel : undefined),
+          tokenCount: options?.tokenCount,
           fileRefs: [],
         });
         return conversationId;

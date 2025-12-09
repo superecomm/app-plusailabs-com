@@ -13,6 +13,7 @@ export type ConversationMessage = {
   avatarUrl?: string;
   fileRefs?: string[];
   model?: string;
+  tokenCount?: number;
 };
 
 export type ConversationPreview = {
