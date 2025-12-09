@@ -108,7 +108,7 @@ export function NeuralBox({
   const [modelQuery, setModelQuery] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<string>("Plus Agent");
+  const [selectedAgent, setSelectedAgent] = useState<string>("+Agent");
   const thinkingMessages = useMemo(
     () => ["Thinking...", "Preparing response...", "Synthesizing...", "Almost there..."],
     []
@@ -665,84 +665,90 @@ export function NeuralBox({
                 <div className="relative px-2 sm:px-0 min-h-[1px]">
                   {/* Agent Menu */}
                   <div
-                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-[5px] border border-gray-200 bg-white/95 px-3 py-3 transition-all duration-200 ${
+                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-t-[5px] border border-gray-400 bg-white/95 px-3 py-3 transition-all duration-200 ${
                       isAgentMenuOpen
-                        ? "translate-y-5 opacity-100 pointer-events-auto"
+                        ? "translate-y-[18px] opacity-100 pointer-events-auto"
                         : "translate-y-8 opacity-0 pointer-events-none"
                     }`}
                   >
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold sm:grid-cols-3">
-                      {["Plus Agent", "Code Agent", "Research Agent", "Creative Agent"].map((agent) => {
-                        const isActive = agent === selectedAgent;
-                        return (
-                          <button
-                            key={agent}
-                            type="button"
-                            onClick={() => {
-                              setSelectedAgent(agent);
-                              setIsAgentMenuOpen(false);
-                            }}
-                            className={`rounded-[5px] border px-3 py-2 text-left tracking-[0.2em] transition ${
-                              isActive
-                                ? "border-gray-900 bg-gray-900 text-white"
-                                : "border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900"
-                            }`}
-                          >
-                            {agent}
-                          </button>
-                        );
-                      })}
+                    <div className="p-2">
+                      <h3 className="text-[10px] font-semibold text-gray-500 mb-2 px-2 uppercase tracking-wider">Select Agent</h3>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {["+Agent", "Code Agent", "Research Agent", "Creative Agent"].map((agent) => {
+                          const isActive = agent === selectedAgent;
+                          return (
+                            <button
+                              key={agent}
+                              type="button"
+                              onClick={() => {
+                                setSelectedAgent(agent);
+                                setIsAgentMenuOpen(false);
+                              }}
+                              className={`rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition ${
+                                isActive
+                                  ? "bg-gray-900 text-white"
+                                  : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                              }`}
+                            >
+                              {agent}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
                   {/* Model Menu */}
                   <div
-                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-[5px] border border-gray-200 bg-white/95 px-3 py-3 transition-all duration-200 ${
+                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-t-[5px] border border-gray-400 bg-white/95 px-3 py-3 transition-all duration-200 ${
                       isModelMenuOpen
-                        ? "translate-y-5 opacity-100 pointer-events-auto"
+                        ? "translate-y-[18px] opacity-100 pointer-events-auto"
                         : "translate-y-8 opacity-0 pointer-events-none"
                     }`}
                   >
-                  <div className="mb-2">
-                    <div className="flex items-center gap-2 rounded-[5px] border border-gray-200 bg-white px-3 py-2">
-                      <Search className="h-4 w-4 text-gray-400" />
-                      <input
-                        type="text"
-                        value={modelQuery}
-                        onChange={(e) => setModelQuery(e.target.value)}
-                        placeholder="Search models"
-                        className="w-full text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none"
-                      />
+                    <div className="p-2">
+                      <h3 className="text-[10px] font-semibold text-gray-500 mb-2 px-2 uppercase tracking-wider">Select Model</h3>
+                      <div className="mb-2">
+                        <div className="flex items-center gap-2 rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5">
+                          <Search className="h-3.5 w-3.5 text-gray-400" />
+                          <input
+                            type="text"
+                            value={modelQuery}
+                            onChange={(e) => setModelQuery(e.target.value)}
+                            placeholder="Search models"
+                            className="w-full text-xs text-gray-900 placeholder:text-gray-500 focus:outline-none bg-transparent"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {filteredModels.length === 0 && (
+                          <p className="col-span-2 text-[10px] text-gray-400 px-2 py-1.5 text-center">
+                            No models match "{modelQuery}"
+                          </p>
+                        )}
+                        {filteredModels.map((model) => {
+                          const isActive = model.id === selectedModel;
+                          return (
+                            <button
+                              key={model.id}
+                              type="button"
+                              onClick={() => handleModelSelect(model.id)}
+                              className={`rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition ${
+                                isActive
+                                  ? "bg-gray-900 text-white"
+                                  : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                              }`}
+                            >
+                              {model.name}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold sm:grid-cols-3">
-                    {filteredModels.length === 0 && (
-                      <p className="col-span-full text-[11px] uppercase tracking-[0.3em] text-gray-400">
-                        No models match “{modelQuery}”
-                      </p>
-                    )}
-                    {filteredModels.map((model) => {
-                      const isActive = model.id === selectedModel;
-                      return (
-                        <button
-                          key={model.id}
-                          type="button"
-                          onClick={() => handleModelSelect(model.id)}
-                          className={`rounded-[5px] border px-3 py-2 text-left tracking-[0.2em] transition ${
-                            isActive
-                              ? "border-gray-900 bg-gray-900 text-white"
-                              : "border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900"
-                          }`}
-                        >
-                          {model.name}
-                        </button>
-                      );
-                    })}
-                  </div>
                   </div>
                 </div>
 
-                <div className="relative z-10 flex flex-1 flex-col rounded-[5px] border border-gray-200 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
+                <div className="relative z-10 flex flex-1 flex-col rounded-[5px] border border-gray-400 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
                   <textarea
                     ref={textareaRef}
                     value={textInput}
