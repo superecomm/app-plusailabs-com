@@ -63,30 +63,38 @@ export function subscribeToConversations(
 
 export function subscribeToMessages(
   conversationId: string,
-  callback: (messages: ConversationMessage[]) => void
+  callback: (messages: ConversationMessage[]) => void,
+  onError?: (error: unknown) => void
 ) {
   const firestore = assertDb();
   const messagesRef = collection(firestore, "conversations", conversationId, "messages");
   const q = query(messagesRef, orderBy("timestamp", "asc"));
 
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    const messages: ConversationMessage[] = snapshot.docs.map((docSnap) => {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        conversationId,
-        sender: data.sender,
-        content: data.content,
-        type: data.type || "text",
-        timestamp: data.timestamp?.toMillis?.() ?? Date.now(),
-        avatarType: data.avatarType,
-        avatarUrl: data.avatarUrl,
-        fileRefs: data.fileRefs,
-        model: data.model,
-      };
-    });
-    callback(messages);
-  });
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      const messages: ConversationMessage[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          conversationId,
+          sender: data.sender,
+          content: data.content,
+          type: data.type || "text",
+          timestamp: data.timestamp?.toMillis?.() ?? Date.now(),
+          avatarType: data.avatarType,
+          avatarUrl: data.avatarUrl,
+          fileRefs: data.fileRefs,
+          model: data.model,
+        };
+      });
+      callback(messages);
+    },
+    (error) => {
+      console.warn("Message subscription error:", error);
+      onError?.(error);
+    }
+  );
 
   return unsubscribe;
 }

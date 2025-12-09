@@ -45,7 +45,7 @@ interface ChatContextType {
   conversationHistory: ConversationMessage[];
   conversationPreviews: ConversationPreview[];
   currentConversationId: string | null;
-  startNewConversation: () => void;
+  startNewConversation: () => Promise<string | null>;
   loadConversation: (conversationId: string) => void;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   removeConversation: (conversationId: string) => Promise<void>;
@@ -137,20 +137,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const unsubscribe = subscribeToMessages(currentConversationId, (messages) => {
-        setConversationHistory(messages);
-        cacheConversationMessages(currentUser.uid, currentConversationId, messages);
-      });
+      const unsubscribe = subscribeToMessages(
+        currentConversationId,
+        (messages) => {
+          setConversationHistory(messages);
+          cacheConversationMessages(currentUser.uid, currentConversationId, messages);
+        },
+        (error) => {
+          console.warn("Message subscription failed, resetting conversation:", error);
+          setConversationHistory([]);
+          setCurrentConversationId(null);
+        }
+      );
       return unsubscribe;
     } catch (error) {
       console.warn("Message subscription failed:", error);
     }
   }, [currentUser, currentConversationId]);
 
-  const startNewConversation = useCallback(() => {
-    setCurrentConversationId(null);
+  const startNewConversation = useCallback(async () => {
     setConversationHistory([]);
-  }, []);
+
+    // If the user is not signed in, reset the current conversation and clear any cached local history
+    if (!currentUser) {
+      setCurrentConversationId(null);
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(LOCAL_CONVERSATION_KEY);
+      }
+      return null;
+    }
+
+    try {
+      const newConversationId = await createConversationDoc(currentUser.uid, selectedModel, "Untitled");
+      setCurrentConversationId(newConversationId);
+      return newConversationId;
+    } catch (error) {
+      console.error("Failed to start new conversation", error);
+      return null;
+    }
+  }, [currentUser, selectedModel]);
 
   const loadConversation = useCallback((conversationId: string) => {
     setCurrentConversationId(conversationId);
@@ -168,7 +193,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     try {
       await deleteConversation(conversationId);
       if (currentConversationId === conversationId) {
-        startNewConversation();
+        await startNewConversation();
       }
     } catch (error) {
       console.error("Failed to delete conversation", error);

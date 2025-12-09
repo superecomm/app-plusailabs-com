@@ -172,15 +172,22 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
     setShowStatusModal(false);
   };
 
-  const handleNewChat = () => {
-    startNewConversation();
+  const handleNewChat = async () => {
+    const newId = await startNewConversation();
     setIsHistoryOpen(false);
-    router.push("/c/");
+
+    // If creation succeeds, navigate to the conversation URL; otherwise fall back to the generic chat route
+    if (newId) {
+      router.push(`/c/${newId}`);
+    } else {
+      router.push("/c");
+    }
   };
 
   const handleSelectConversation = (id: string) => {
     loadConversation(id);
     setIsHistoryOpen(false);
+    // Navigate to the conversation URL
     router.push(`/c/${id}`);
   };
 

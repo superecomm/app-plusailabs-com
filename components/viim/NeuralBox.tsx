@@ -637,7 +637,7 @@ export function NeuralBox({
                   <VIIMAnimation state="idle" size="sm" container="square" visualStyle="particles" audioStream={null} />
                 </div>
                 <div className="space-y-1 text-gray-800">
-                  <p className={`text-base font-semibold ${!currentUser ? "text-gray-900 text-lg" : ""}`}>Tap to launch Super +AI</p>
+                  <p className={`text-base font-semibold ${!currentUser ? "text-gray-900 text-lg" : ""}`}>Tap to launch +AI</p>
                 </div>
               </button>
             </div>
@@ -665,7 +665,7 @@ export function NeuralBox({
                 <div className="relative px-2 sm:px-0 min-h-[1px]">
                   {/* Agent Menu */}
                   <div
-                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-t-[5px] border border-gray-400 bg-white/95 px-3 py-3 transition-all duration-200 ${
+                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-t-[5px] border border-gray-300 bg-white/95 px-3 py-3 transition-all duration-200 ${
                       isAgentMenuOpen
                         ? "translate-y-[18px] opacity-100 pointer-events-auto"
                         : "translate-y-8 opacity-0 pointer-events-none"
@@ -700,7 +700,7 @@ export function NeuralBox({
 
                   {/* Model Menu */}
                   <div
-                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-t-[5px] border border-gray-400 bg-white/95 px-3 py-3 transition-all duration-200 ${
+                    className={`absolute bottom-full left-1/2 z-0 w-[95%] max-w-[360px] -translate-x-1/2 rounded-t-[5px] border border-gray-300 bg-white/95 px-3 py-3 transition-all duration-200 ${
                       isModelMenuOpen
                         ? "translate-y-[18px] opacity-100 pointer-events-auto"
                         : "translate-y-8 opacity-0 pointer-events-none"
@@ -748,7 +748,7 @@ export function NeuralBox({
                   </div>
                 </div>
 
-                <div className="relative z-10 flex flex-1 flex-col rounded-[5px] border border-gray-400 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
+                <div className="relative z-10 flex flex-1 flex-col rounded-[5px] border border-gray-300 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
                   <textarea
                     ref={textareaRef}
                     value={textInput}
