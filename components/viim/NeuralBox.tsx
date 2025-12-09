@@ -100,13 +100,15 @@ export function NeuralBox({
   const [hasActivatedOnce, setHasActivatedOnce] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [userHasScrolled, setUserHasScrolled] = useState(false);
   const [isKeyboardMockVisible, setIsKeyboardMockVisible] = useState(showKeyboardMock);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [usageWarning, setUsageWarning] = useState<string | null>(null);
   const [modelQuery, setModelQuery] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<string>("+Agent");
+  const [selectedAgent, setSelectedAgent] = useState<string>("Plus Agent");
   const thinkingMessages = useMemo(
     () => ["Thinking...", "Preparing response...", "Synthesizing...", "Almost there..."],
     []
@@ -124,6 +126,7 @@ export function NeuralBox({
   }) => {
     const [display, setDisplay] = useState(isUser ? text : "");
     const doneRef = useRef(false);
+    const [showCursor, setShowCursor] = useState(!isUser);
 
     useEffect(() => {
       if (isUser) return;
@@ -136,26 +139,40 @@ export function NeuralBox({
         setDisplay(words.slice(0, idx).join(" "));
         if (idx >= words.length) {
           doneRef.current = true;
+          setShowCursor(false);
           clearInterval(interval);
         }
-      }, 25);
+      }, 30);
 
       return () => clearInterval(interval);
     }, [isUser, text]);
 
     return (
-      <ReactMarkdown
-        components={{
-          p: ({ node, ...props }) => (
-            <p className="whitespace-pre-line text-gray-900" {...props} />
-          ),
-          li: ({ node, ...props }) => (
-            <li className="whitespace-pre-line text-gray-900" {...props} />
-          ),
-        }}
-      >
-        {display || " "}
-      </ReactMarkdown>
+      <div className="relative">
+        <ReactMarkdown
+          components={{
+            p: ({ node, ...props }) => (
+              <p className={`whitespace-pre-line ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            ),
+            li: ({ node, ...props }) => (
+              <li className={`whitespace-pre-line ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            ),
+            code: ({ node, className, ...props }: any) => {
+              const isInline = !className?.includes('language-');
+              return isInline ? (
+                <code className="bg-gray-100 text-gray-900 px-1.5 py-0.5 rounded text-sm font-mono" {...props} />
+              ) : (
+                <code className="block bg-gray-900 text-gray-100 px-4 py-3 rounded-lg text-sm font-mono overflow-x-auto my-2" {...props} />
+              );
+            },
+          }}
+        >
+          {display || " "}
+        </ReactMarkdown>
+        {showCursor && !doneRef.current && (
+          <span className="inline-block w-0.5 h-5 bg-gray-900 ml-0.5 animate-pulse" />
+        )}
+      </div>
     );
   };
 
@@ -478,6 +495,35 @@ export function NeuralBox({
     }
   }, [conversationHistory, hasActivatedOnce, isActivated, setIsActivated, setShowGreeting]);
 
+  // Auto-scroll to bottom when new messages appear or during streaming
+  useEffect(() => {
+    if (!scrollContainerRef.current || userHasScrolled) return;
+    
+    const scrollToBottom = () => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    };
+
+    scrollToBottom();
+    const timer = setTimeout(scrollToBottom, 50); // Slight delay for DOM update
+    return () => clearTimeout(timer);
+  }, [conversationHistory, userHasScrolled]);
+
+  // Detect manual scroll and pause auto-scroll
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      setUserHasScrolled(!isNearBottom);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const isVoiceMode = inputMode === "voice";
   const canSendText = Boolean(textInput.trim());
   const primaryButtonDisabled = isVoiceMode
@@ -495,6 +541,7 @@ export function NeuralBox({
       />
       
       <div
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-3 pb-44 pt-6 sm:px-6"
         style={{ scrollbarGutter: "stable" }}
       >
@@ -510,35 +557,40 @@ export function NeuralBox({
               return (
                 <div
                   key={entry.id}
-                  className="flex w-full justify-center"
+                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser ? "bg-gray-50/60" : ""} py-5 px-3`}
                 >
-                  <div className="flex w-full max-w-5xl flex-col gap-3 px-2">
-                    <article className="w-full px-2 py-4">
-                      <div className="space-y-3 text-sm leading-7 text-gray-900 text-center">
+                  <div
+                    className={`flex flex-col gap-3 ${
+                      isUser ? "max-w-[85%] sm:max-w-[70%]" : "w-full max-w-4xl"
+                    }`}
+                  >
+                    <article
+                      className={`${
+                        isUser
+                          ? "rounded-3xl bg-gray-800 text-white px-5 py-3"
+                          : "bg-transparent text-gray-900 px-2"
+                      }`}
+                    >
+                      <div className={`space-y-3 text-[15px] leading-7 ${isUser ? "text-white" : "text-gray-900"}`}>
                         <AnimatedContent text={entry.content} isUser={isUser} messageId={entry.id} />
                       </div>
                     </article>
-                    <div className="flex flex-col gap-2 w-full">
-                      <div className="flex flex-row flex-nowrap items-center justify-center gap-1 text-gray-400 overflow-x-auto">
-                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Copy">
+                    {!isUser && (
+                      <div className="flex flex-row flex-nowrap items-center gap-1 text-gray-400 overflow-x-auto pb-2 border-b border-gray-200">
+                        <button className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-900 flex-shrink-0" aria-label="Copy">
                           <Clipboard className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Thumbs up">
+                        <button className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-900 flex-shrink-0" aria-label="Thumbs up">
                           <ThumbsUp className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Thumbs down">
+                        <button className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-900 flex-shrink-0" aria-label="Thumbs down">
                           <ThumbsDown className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Reply">
-                          <MessageSquarePlus className="h-3.5 w-3.5" />
-                        </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="Regenerate">
+                        <button className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-900 flex-shrink-0" aria-label="Regenerate">
                           <RefreshCcw className="h-3.5 w-3.5" />
                         </button>
-                        <button className="rounded-full p-1.5 hover:text-gray-900 flex-shrink-0" aria-label="More options">
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </button>
-                        <span className="text-gray-600 whitespace-nowrap text-[11px] uppercase tracking-[0.2em] flex-shrink-0">
+                        <div className="flex-1" />
+                        <span className="text-gray-500 whitespace-nowrap text-[11px] flex-shrink-0">
                           {new Date(entry.timestamp).toLocaleString([], {
                             month: "short",
                             day: "2-digit",
@@ -547,18 +599,17 @@ export function NeuralBox({
                           })}
                         </span>
                         {entry.model && (
-                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 text-[11px] normal-case tracking-[0.05em] whitespace-nowrap flex-shrink-0">
+                          <span className="px-2 py-0.5 text-gray-600 text-[11px] whitespace-nowrap flex-shrink-0">
                             {entry.model}
                           </span>
                         )}
                         {entry.tokenCount !== undefined && (
-                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 text-[11px] normal-case tracking-[0.05em] whitespace-nowrap flex-shrink-0">
+                          <span className="px-2 py-0.5 text-gray-600 text-[11px] whitespace-nowrap flex-shrink-0">
                             {entry.tokenCount} tokens
                           </span>
                         )}
                       </div>
-                      <hr className="border-t border-gray-200 w-full" />
-                    </div>
+                    )}
                   </div>
                 </div>
               );
@@ -621,7 +672,7 @@ export function NeuralBox({
                     }`}
                   >
                     <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold sm:grid-cols-3">
-                      {["+Agent", "Code Agent", "Research Agent", "Creative Agent"].map((agent) => {
+                      {["Plus Agent", "Code Agent", "Research Agent", "Creative Agent"].map((agent) => {
                         const isActive = agent === selectedAgent;
                         return (
                           <button
@@ -696,7 +747,7 @@ export function NeuralBox({
                     ref={textareaRef}
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
-                    placeholder={isVoiceMode ? "Voice mode active" : "What can I do for you?"}
+                    placeholder={isVoiceMode ? "Voice mode active" : "What up?"}
                     disabled={isVoiceMode || isProcessingInput}
                     rows={1}
                     className="w-full flex-1 resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
