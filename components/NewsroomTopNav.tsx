@@ -1,0 +1,88 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { useState } from "react";
+import plusAi from "@/assets/plusailabs brand assets/plusai-full-logo-black.png";
+
+export function NewsroomTopNav() {
+  const [sideOpen, setSideOpen] = useState(false);
+
+  return (
+    <header className="sticky top-0 z-[200] border-b border-gray-200 bg-white">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
+        <div className="flex items-center gap-3">
+          <Link href="/">
+            <Image src={plusAi} alt="+AI" width={53} height={14} priority />
+          </Link>
+        </div>
+        <div className="flex items-center gap-3 text-sm font-semibold">
+          <button
+            onClick={() => setSideOpen(true)}
+            className={`h-7 w-16 rounded-md transition shadow-inner ${
+              sideOpen ? "bg-gray-900" : "bg-gray-300"
+            }`}
+            aria-label="Open menu"
+            aria-expanded={sideOpen}
+          >
+            <span
+              className={`block h-3 w-6 rounded-sm bg-white transition-transform duration-200 ${
+                sideOpen ? "translate-x-8" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {sideOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[9990] bg-black/50 backdrop-blur-sm"
+            onClick={() => setSideOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="fixed top-0 right-0 z-[9991] h-full w-72 max-w-[90vw] bg-white shadow-2xl ring-1 ring-black/10 transition">
+            <div className="mt-16 p-4 space-y-3 text-sm font-semibold text-gray-800">
+              <Link
+                href="/about"
+                onClick={() => setSideOpen(false)}
+                className="block rounded-md px-3 py-2 hover:bg-gray-100"
+              >
+                About +AI
+              </Link>
+              <Link
+                href="/pricing"
+                onClick={() => setSideOpen(false)}
+                className="block rounded-md px-3 py-2 hover:bg-gray-100"
+              >
+                Pricing
+              </Link>
+              <Link
+                href="/subscribe"
+                onClick={() => setSideOpen(false)}
+                className="block rounded-md px-3 py-2 hover:bg-gray-100"
+              >
+                Get started
+              </Link>
+              <Link
+                href="/family"
+                onClick={() => setSideOpen(false)}
+                className="block rounded-md px-3 py-2 hover:bg-gray-100"
+              >
+                Family Plan
+              </Link>
+              <Link
+                href="/newsroom"
+                onClick={() => setSideOpen(false)}
+                className="block rounded-md px-3 py-2 hover:bg-gray-100"
+              >
+                Newsroom
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+    </header>
+  );
+}
+
