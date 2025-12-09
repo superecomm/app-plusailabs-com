@@ -105,6 +105,19 @@ export function NeuralBox({
   const [usageWarning, setUsageWarning] = useState<string | null>(null);
   const [modelQuery, setModelQuery] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const thinkingMessages = useMemo(
+    () => ["Thinking...", "Preparing response...", "Synthesizing...", "Almost there..."],
+    []
+  );
+  const [thinkingIndex, setThinkingIndex] = useState(0);
+
+  useEffect(() => {
+    if (state !== "processing") return;
+    const id = setInterval(() => {
+      setThinkingIndex((prev) => (prev + 1) % thinkingMessages.length);
+    }, 1600);
+    return () => clearInterval(id);
+  }, [state, thinkingMessages.length]);
 
   const renderAvatar = (sender: "user" | "assistant", avatarUrl?: string) => {
     if (avatarUrl) {
@@ -503,12 +516,19 @@ export function NeuralBox({
                           <MoreHorizontal className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                      <p className="text-[11px] uppercase tracking-[0.2em]">
-                        {new Date(entry.timestamp).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-gray-500">
+                        <span>
+                          {new Date(entry.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        {entry.model && (
+                          <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-700 normal-case tracking-[0.05em]">
+                            {entry.model}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -520,7 +540,7 @@ export function NeuralBox({
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-white">
                 <VIIMAnimation state="processing" size="xxs" />
               </div>
-              Thinking…
+              {thinkingMessages[thinkingIndex]}
             </article>
           )}
 
@@ -533,7 +553,7 @@ export function NeuralBox({
                   !currentUser ? "scale-110 drop-shadow-2xl" : ""
                 }`}
               >
-                <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-[32px] bg-transparent">
+                <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-[24px] bg-transparent">
                   <VIIMAnimation state="idle" size="sm" container="square" visualStyle="particles" audioStream={null} />
                 </div>
                 <div className="space-y-1 text-gray-800">

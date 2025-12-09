@@ -433,34 +433,14 @@ export default function VIIMAnimation({
               newY += newVy + breatheY;
               
             } else if (state === "processing") {
-              // PROCESSING STATE: Swirling compact node with low-frequency pulse
-              const distFromCenterX = p.x - centerX;
-              const distFromCenterY = p.y - centerY;
-              const dist = Math.sqrt(distFromCenterX ** 2 + distFromCenterY ** 2);
-              
-              // Swirling motion around center
-              const angle = Math.atan2(distFromCenterY, distFromCenterX);
-              const swirlSpeed = 0.02;
-              const newAngle = angle + swirlSpeed;
-              
-              // Low-frequency pulse (breathing)
-              const pulse = Math.sin(time * 0.3) * 0.3 + 1; // 0.7 to 1.3
-              const targetRadius = 20 * pulse;
-              
-              // Pull particles toward target radius
-              const radiusDiff = dist - targetRadius;
-              const pullStrength = 0.05;
-              newVx += -distFromCenterX * pullStrength * (radiusDiff / (dist + 0.1));
-              newVy += -distFromCenterY * pullStrength * (radiusDiff / (dist + 0.1));
-              
-              // Add swirling velocity
-              const swirlVx = -Math.sin(newAngle) * swirlSpeed * 50;
-              const swirlVy = Math.cos(newAngle) * swirlSpeed * 50;
-              newVx += swirlVx;
-              newVy += swirlVy;
-              
-              newX += newVx;
-              newY += newVy;
+              // PROCESSING STATE: smooth constellation orbit (ChatGPT-style)
+              const baseAngle = p.life * Math.PI * 2;
+              const angle = baseAngle + time * 0.8;
+              const radius = 18 + Math.sin(time * 1.2) * 3; // gentle pulse
+              const targetX = centerX + Math.cos(angle) * radius;
+              const targetY = centerY + Math.sin(angle) * radius;
+              newX += (targetX - p.x) * 0.12;
+              newY += (targetY - p.y) * 0.12;
               
             } else {
               // ACTIVE STATE: Neural waveform stream - magnetize to center stream
