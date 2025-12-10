@@ -18,7 +18,11 @@ export type UsageSummary = {
   monthly: Record<string, { tokens: number; costUSD: number }>;
   dailyTokenLimit: number;
   monthlyCostLimitUSD: number;
+  freeTrial?: {
+    totalRequestsUsed: number;
+    totalRequestsCap: number;
+    isLocked: boolean;
+    lockedAt?: number;
+  };
   updatedAt: number;
 };
-
-
