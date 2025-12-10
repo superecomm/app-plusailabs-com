@@ -1,19 +1,16 @@
-import { db } from "@/lib/firebase/client";
-import { collection, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { getAdminFirestore } from "@/lib/firebase/admin";
 import type { UsageLog, UsageSummary, UsageProvider } from "@/types/usage";
 import { estimateCostUSD } from "./usageCosts";
 
-function assertDb() {
-  // On the server (API routes), the client Firebase SDK is not initialized.
-  // When Firestore isn't available, usage tracking should be a no-op rather
-  // than throwing and breaking LLM calls.
-  if (!db) {
-    if (typeof window === "undefined") {
-      return undefined;
+function assertAdminDb() {
+  try {
+    return getAdminFirestore();
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Firebase Admin unavailable, skipping usage tracking", error);
     }
-    throw new Error("Firebase client is not initialized. Set NEXT_PUBLIC_FIREBASE_* env vars.");
+    return undefined;
   }
-  return db;
 }
 
 function getDailyKey(date = new Date()) {
@@ -31,10 +28,9 @@ export async function logUsage(params: {
   promptTokens: number;
   completionTokens: number;
 }) {
-  const firestore = assertDb();
-  // If Firestore is not available (e.g. on server without client config),
-  // skip logging but don't block the request.
+  const firestore = assertAdminDb();
   if (!firestore) return;
+
   const totalTokens = params.promptTokens + params.completionTokens;
   const costUSD = estimateCostUSD(params.model, params.promptTokens, params.completionTokens);
   const now = new Date();
@@ -52,40 +48,48 @@ export async function logUsage(params: {
     createdAt: now.getTime(),
   };
 
-  const logsRef = collection(firestore, "usageLogs");
-  await setDoc(doc(logsRef), { ...usageLog, createdAt: serverTimestamp() });
+  try {
+    const logsRef = firestore.collection("usageLogs");
+    await logsRef.add(usageLog);
 
-  const summaryRef = doc(firestore, "usageSummary", params.userId);
-  const summarySnap = await getDoc(summaryRef);
-  const defaultSummary: UsageSummary = {
-    userId: params.userId,
-    daily: {},
-    monthly: {},
-    dailyTokenLimit: 100000,
-    monthlyCostLimitUSD: 10,
-    updatedAt: now.getTime(),
-  };
-  const summary = summarySnap.exists() ? (summarySnap.data() as UsageSummary) : defaultSummary;
+    const summaryRef = firestore.collection("usageSummary").doc(params.userId);
+    
+    await firestore.runTransaction(async (transaction) => {
+      const summaryDoc = await transaction.get(summaryRef);
+      
+      const defaultSummary: UsageSummary = {
+        userId: params.userId,
+        daily: {},
+        monthly: {},
+        dailyTokenLimit: 100000,
+        monthlyCostLimitUSD: 10,
+        updatedAt: now.getTime(),
+      };
 
-  const dailyBucket = summary.daily[dailyKey] || { tokens: 0, costUSD: 0 };
-  const monthlyBucket = summary.monthly[monthlyKey] || { tokens: 0, costUSD: 0 };
+      const summary = summaryDoc.exists ? (summaryDoc.data() as UsageSummary) : defaultSummary;
 
-  dailyBucket.tokens += totalTokens;
-  dailyBucket.costUSD += costUSD;
-  monthlyBucket.tokens += totalTokens;
-  monthlyBucket.costUSD += costUSD;
+      const dailyBucket = summary.daily[dailyKey] || { tokens: 0, costUSD: 0 };
+      const monthlyBucket = summary.monthly[monthlyKey] || { tokens: 0, costUSD: 0 };
 
-  summary.daily[dailyKey] = dailyBucket;
-  summary.monthly[monthlyKey] = monthlyBucket;
-  summary.updatedAt = now.getTime();
+      dailyBucket.tokens += totalTokens;
+      dailyBucket.costUSD += costUSD;
+      monthlyBucket.tokens += totalTokens;
+      monthlyBucket.costUSD += costUSD;
 
-  await setDoc(summaryRef, summary);
+      summary.daily[dailyKey] = dailyBucket;
+      summary.monthly[monthlyKey] = monthlyBucket;
+      summary.updatedAt = now.getTime();
+
+      transaction.set(summaryRef, summary);
+    });
+  } catch (error) {
+    console.error("Error logging usage:", error);
+  }
 }
 
 export async function getUsageSummary(userId: string): Promise<UsageSummary> {
-  const firestore = assertDb();
+  const firestore = assertAdminDb();
   if (!firestore) {
-    // No Firestore available; return a permissive default so usage checks pass.
     return {
       userId,
       daily: {},
@@ -95,9 +99,11 @@ export async function getUsageSummary(userId: string): Promise<UsageSummary> {
       updatedAt: Date.now(),
     };
   }
-  const summaryRef = doc(firestore, "usageSummary", userId);
-  const snap = await getDoc(summaryRef);
-  if (!snap.exists()) {
+
+  const summaryRef = firestore.collection("usageSummary").doc(userId);
+  const snap = await summaryRef.get();
+
+  if (!snap.exists) {
     const defaultSummary: UsageSummary = {
       userId,
       daily: {},
@@ -106,13 +112,18 @@ export async function getUsageSummary(userId: string): Promise<UsageSummary> {
       monthlyCostLimitUSD: 10,
       updatedAt: Date.now(),
     };
-    await setDoc(summaryRef, defaultSummary);
+    // Don't wait for write, just return default
+    summaryRef.set(defaultSummary).catch(console.error);
     return defaultSummary;
   }
+
   return snap.data() as UsageSummary;
 }
 
 export async function checkUsageAllowed(userId: string): Promise<{ allowed: boolean; reason?: string }> {
+  // Anonymous users bypass strict checks for now, or you can block them
+  if (userId === "anonymous") return { allowed: true };
+
   const summary = await getUsageSummary(userId);
   const dailyKey = getDailyKey();
   const monthlyKey = getMonthlyKey();
@@ -129,5 +140,3 @@ export async function checkUsageAllowed(userId: string): Promise<{ allowed: bool
 
   return { allowed: true };
 }
-
-
