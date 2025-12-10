@@ -1,5 +1,7 @@
 // Model Registry - Central definition of all available AI models
 
+import { LLMErrorCategory } from "./llmModels";
+
 export type ModelType = "asr" | "llm" | "audio" | "voiceprint";
 export type ModelProvider = "openai" | "meta" | "google" | "anthropic" | "elevenlabs" | "hume" | "suno" | "runway" | "local" | "streamdisc";
 
@@ -11,6 +13,7 @@ export interface ModelResponse {
   acousticFeatures?: Record<string, any>;
   error?: string;
   status?: number;
+  errorCategory?: LLMErrorCategory;
 }
 
 export interface Model {
@@ -217,4 +220,3 @@ export function getModelsForMode(mode: "voice" | "text"): Model[] {
     return allModels.filter((m) => m.supportsText);
   }
 }
-
