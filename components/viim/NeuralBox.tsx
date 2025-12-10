@@ -658,6 +658,11 @@ export function NeuralBox({
                       </div>
                     )}
                   </div>
+                  {!isUser && (
+                    <div className="flex-shrink-0 ml-3 pt-5">
+                        {renderAvatar(entry.sender as any, entry.avatarUrl)}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -671,6 +676,11 @@ export function NeuralBox({
                                 <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" />
                              </div>
                         </article>
+                     </div>
+                     <div className="flex-shrink-0 ml-3 pt-5">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-gray-900 to-gray-600 text-white flex-shrink-0">
+                            <VIIMAnimation state={state} size="custom" customSize={24} container="none" />
+                        </div>
                      </div>
                  </div>
             )}

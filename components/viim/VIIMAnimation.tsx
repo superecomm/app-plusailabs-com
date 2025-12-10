@@ -46,7 +46,13 @@ export default function VIIMAnimation({
     lg: { barCount: 40, height: 200, barWidth: 8, gap: 8, containerSize: 480 },
     custom: { barCount: 10, height: customSize || 100, barWidth: 3, gap: 3, containerSize: customSize || 100 }
   };
-  const config = sizeConfig[size];
+  const config = sizeConfig[size] || sizeConfig.md;
+
+  // Ensure config updates if customSize changes
+  if (size === "custom" && customSize) {
+      config.height = customSize;
+      config.containerSize = customSize;
+  }
 
   // Helper function to generate particle positions that form number shapes
   const getNumberParticles = (number: number, centerX: number, centerY: number) => {
@@ -800,6 +806,7 @@ export default function VIIMAnimation({
                   strokeWidth={size < 50 ? 1 : 2.5}
                   opacity="0.8"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               );
             }
@@ -1016,15 +1023,15 @@ export default function VIIMAnimation({
           {/* Waveform */}
           {renderWaveform()}
           
-          {/* Recording time display */}
-          {state === "recording" && recordingTime > 0 && (
+          {/* Recording time display - REMOVED PER USER FEEDBACK */}
+          {/* state === "recording" && recordingTime > 0 && (
             <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex items-center gap-3 px-6 py-3 bg-red-900/70 border-2 border-red-500/70 rounded-full backdrop-blur-md shadow-lg">
               <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
               <span className="text-red-100 font-mono text-lg font-bold tracking-wider">
                 {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}
               </span>
             </div>
-          )}
+          ) */}
           
           {/* Countdown display */}
           {recordingCountdown && recordingCountdown > 0 && (
