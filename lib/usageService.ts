@@ -97,14 +97,6 @@ export async function logUsage(params: {
       
       if (!summary.freeTrial.isLocked) {
            summary.freeTrial.totalRequestsUsed += 1;
-           if (summary.freeTrial.totalRequestsUsed >= summary.freeTrial.totalRequestsCap) {
-                // Only lock if they are strictly on the "free" plan.
-                // We'll check subscription doc or just lock here and let checkUsageAllowed handle overrides for paid plans.
-                // Better approach: just increment here. Usage check logic will decide if "isLocked" blocks them based on plan.
-                // However, to persist the "locked" state for UI, we can set it.
-                // But we must be careful not to lock paid users who just happen to have this field.
-                // For now, we update usage count. The lock check happens in checkUsageAllowed.
-           }
       }
 
       transaction.set(summaryRef, summary);
@@ -147,7 +139,15 @@ export async function getUsageSummary(userId: string): Promise<UsageSummary> {
   return snap.data() as UsageSummary;
 }
 
-export async function checkUsageAllowed(userId: string): Promise<{ allowed: boolean; reason?: string; code?: string }> {
+export interface UsageCheckResult {
+    allowed: boolean;
+    reason?: string;
+    code?: string;
+    usagePercent?: number; // 0-100
+    daysRemaining?: number;
+}
+
+export async function checkUsageAllowed(userId: string): Promise<UsageCheckResult> {
   if (userId === "anonymous") return { allowed: true };
 
   const firestore = assertAdminDb();
@@ -199,13 +199,24 @@ export async function checkUsageAllowed(userId: string): Promise<{ allowed: bool
   const dailyLimit = (plan === "plus" || plan === "super") ? PLUS_PLAN_DAILY_TOKEN_CAP : FREE_PLAN_DAILY_TOKEN_CAP;
 
   if (dailyTokens >= dailyLimit) {
-    return { allowed: false, reason: "Daily token limit reached" };
+    return { allowed: false, reason: "Daily token limit reached", code: "DAILY_LIMIT" };
   }
 
   const monthlyCost = summary.monthly[monthlyKey]?.costUSD ?? 0;
   if (monthlyCost >= summary.monthlyCostLimitUSD) {
-    return { allowed: false, reason: "Monthly usage limit reached" };
+    return { 
+        allowed: false, 
+        reason: "Monthly usage limit reached",
+        code: "MONTHLY_LIMIT"
+    };
   }
 
-  return { allowed: true };
+  // 5. Usage warning logic (Soft limits)
+  // Check if close to monthly limit (e.g. > 80%)
+  const usagePercent = (monthlyCost / summary.monthlyCostLimitUSD) * 100;
+  
+  return { 
+      allowed: true,
+      usagePercent 
+  };
 }

@@ -39,12 +39,14 @@ import {
   processClaude,
   processSonnet,
   processGemini,
+  LLMErrorCategory
 } from "@/lib/models/llmModels";
 import { processElevenLabs, processSuno, processHume, processRunway } from "@/lib/models/audioModels";
 import { MobileKeyboardMock } from "@/components/mobile/MobileKeyboardMock";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useNotification } from "@/contexts/NotificationContext";
 
 interface NeuralBoxProps {
   audioDeviceId?: string;
@@ -98,6 +100,7 @@ export function NeuralBox({
 
   const { currentUser } = useAuth();
   const router = useRouter();
+  const { showNotification } = useNotification();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
 
@@ -286,12 +289,25 @@ export function NeuralBox({
                         model: modelId,
                     });
                 }
+            } else if (response.errorCategory) {
+                // Unified Error Handling using Notification System
+                const errorMsg = getRandomErrorMsg(response.errorCategory);
+                showNotification("error", errorMsg, [
+                    { label: "Try again", onClick: () => handleLLMRequest(modelId, text) },
+                    { label: "Switch model", onClick: () => setIsModelMenuOpen(true) }
+                ]);
+                setState("idle");
             } else if (response.error.includes("limit_reached") || response.error.includes("limit reached") || response.error.includes("FREE_TRIAL_EXHAUSTED")) {
                  setLimitReached(true);
                  setUsageWarning("You’ve reached the free trial limit for +AI.");
+                 showNotification("limit", "You’ve reached your free +AI limit", [
+                     { label: "Upgrade", onClick: () => router.push("/pricing") }
+                 ]);
                  setState("idle");
             } else {
+                 // Fallback for unknown errors
                  setUsageWarning(response.error);
+                 setState("idle");
             }
         } else if (response.text) {
              setUsageWarning(null);
@@ -311,6 +327,15 @@ export function NeuralBox({
         setIsProcessingInput(false);
         abortControllerRef.current = null;
     }
+  };
+
+  const getRandomErrorMsg = (category: LLMErrorCategory) => {
+      const messages = [
+          "This model is experiencing high demand. Try again shortly or switch models.",
+          "Heavy traffic is causing delays. You can retry or pick another model.",
+          "The model is overloaded at the moment. Switching models may be faster."
+      ];
+      return messages[Math.floor(Math.random() * messages.length)];
   };
 
 

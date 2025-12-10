@@ -10,6 +10,23 @@ interface LLMOptions {
   signal?: AbortSignal;
 }
 
+export type LLMErrorCategory = 
+  | "MODEL_UNAVAILABLE" 
+  | "MODEL_OVERLOADED" 
+  | "MODEL_TIMEOUT" 
+  | "RATE_LIMITED" 
+  | "NETWORK_ERROR"
+  | "UNKNOWN_ERROR";
+
+function classifyError(status: number, message: string): LLMErrorCategory {
+  if (status === 429) return "RATE_LIMITED";
+  if (status === 503) return "MODEL_OVERLOADED";
+  if (status === 504 || message.toLowerCase().includes("timeout")) return "MODEL_TIMEOUT";
+  if (status >= 500) return "MODEL_UNAVAILABLE";
+  if (message.toLowerCase().includes("network") || message.toLowerCase().includes("fetch")) return "NETWORK_ERROR";
+  return "UNKNOWN_ERROR";
+}
+
 async function callLLMEndpoint(
   endpoint: string,
   payload: Record<string, unknown>,
@@ -36,7 +53,15 @@ async function callLLMEndpoint(
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       const message = data?.error ?? data?.details ?? `Failed to reach ${label}`;
-      return { error: typeof message === "string" ? message : JSON.stringify(message), status: response.status };
+      
+      // Classify error for frontend
+      const errorCategory = classifyError(response.status, typeof message === 'string' ? message : JSON.stringify(message));
+      
+      return { 
+        error: typeof message === "string" ? message : JSON.stringify(message), 
+        status: response.status,
+        errorCategory
+      };
     }
 
     if (isStreaming && response.body) {
@@ -55,7 +80,6 @@ async function callLLMEndpoint(
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-            console.log("Stream aborted");
             return { text: fullText, status: 200 }; // Return partial text on abort
         }
         throw err;
@@ -71,7 +95,7 @@ async function callLLMEndpoint(
         return { error: "Request aborted" };
     }
     console.error(`[LLM:${label}]`, error);
-    return { error: `Unable to reach ${label}` };
+    return { error: `Unable to reach ${label}`, errorCategory: "NETWORK_ERROR" };
   }
 }
 

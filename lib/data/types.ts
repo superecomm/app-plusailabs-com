@@ -104,3 +104,10 @@ export interface FreeTrialStatus {
     isLocked: boolean;
     lockedAt?: number;
 }
+
+export interface ModelResponse {
+  text?: string;
+  error?: string;
+  status?: number;
+  errorCategory?: string; // Updated to support error categorization
+}
