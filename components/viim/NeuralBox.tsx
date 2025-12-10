@@ -180,8 +180,8 @@ export function NeuralBox({
       );
     }
     return (
-      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-gray-900 to-gray-600 text-white">
-        <VIIMAnimation state={state} size="xxs" container="none" />
+      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-gray-900 to-gray-600 text-white flex-shrink-0">
+        <VIIMAnimation state={state} size="custom" customSize={24} container="none" />
       </div>
     );
   };
@@ -652,8 +652,8 @@ export function NeuralBox({
 
           {state === "processing" && !streamingContent && (
             <article className="flex items-center gap-3 rounded-[24px] border border-gray-100 bg-gray-50/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
-                <VIIMAnimation state="processing" size="xxs" />
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black text-white flex-shrink-0">
+                <VIIMAnimation state="processing" size="custom" customSize={24} container="none" />
               </div>
               {thinkingMessages[thinkingIndex]}
             </article>

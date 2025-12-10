@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from "react";
 
 interface VIIMAnimationProps {
   state: "idle" | "listening" | "speaking" | "recording" | "processing";
-  size?: "xxs" | "xs" | "sm" | "md" | "lg";
+  size?: "xxs" | "xs" | "sm" | "md" | "lg" | "custom";
+  customSize?: number;
   className?: string;
   container?: "circle" | "square" | "none";
   visualStyle?: "bars" | "waves" | "blob" | "radial" | "canvas" | "particles";
@@ -16,6 +17,7 @@ interface VIIMAnimationProps {
 export default function VIIMAnimation({ 
   state = "idle", 
   size = "md",
+  customSize,
   className = "",
   container = "square",
   visualStyle = "particles",
@@ -41,7 +43,8 @@ export default function VIIMAnimation({
     xs: { barCount: 12, height: 70, barWidth: 3, gap: 3, containerSize: 180 },
     sm: { barCount: 20, height: 100, barWidth: 4, gap: 4, containerSize: 280 },
     md: { barCount: 30, height: 150, barWidth: 6, gap: 6, containerSize: 380 },
-    lg: { barCount: 40, height: 200, barWidth: 8, gap: 8, containerSize: 480 }
+    lg: { barCount: 40, height: 200, barWidth: 8, gap: 8, containerSize: 480 },
+    custom: { barCount: 10, height: customSize || 100, barWidth: 3, gap: 3, containerSize: customSize || 100 }
   };
   const config = sizeConfig[size];
 
@@ -738,6 +741,7 @@ export default function VIIMAnimation({
               stroke={color}
               strokeWidth="3"
               strokeLinecap="round"
+              strokeLinejoin="round"
               opacity={state === "speaking" ? 0.9 : 0.5}
               style={{
                 filter: `drop-shadow(0 0 ${state === "speaking" ? '6px' : '3px'} ${color})`
@@ -761,10 +765,10 @@ export default function VIIMAnimation({
 
   // Render particle flow system - monochrome neural network
   const renderParticles = () => {
-    const size = Math.min(config.containerSize - 50, config.height * 2);
+    const size = Math.min(config.containerSize - 10, config.height * 2); // Less margin for tight fits
     
     // Particle size varies by state
-    const particleRadius = state === "idle" ? 4 : state === "listening" ? 3 : 2.5;
+    const particleRadius = size < 50 ? 1.5 : (state === "idle" ? 4 : state === "listening" ? 3 : 2.5);
     
     return (
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -793,7 +797,7 @@ export default function VIIMAnimation({
                   x2={x2}
                   y2={y2}
                   stroke={color}
-                  strokeWidth="2.5"
+                  strokeWidth={size < 50 ? 1 : 2.5}
                   opacity="0.8"
                   strokeLinecap="round"
                 />
@@ -826,7 +830,7 @@ export default function VIIMAnimation({
                     x2={x2}
                     y2={y2}
                     stroke={color}
-                    strokeWidth="2"
+                    strokeWidth={size < 50 ? 1 : 2}
                     opacity={opacity * 0.5}
                   />
                 );
@@ -850,7 +854,7 @@ export default function VIIMAnimation({
                 x2={x2}
                 y2={y2}
                 stroke="rgba(255, 255, 255, 0.3)"
-                strokeWidth="1"
+                strokeWidth={size < 50 ? 0.5 : 1}
                 opacity="0.4"
               />
             );
@@ -1081,4 +1085,3 @@ export default function VIIMAnimation({
     </div>
   );
 }
-
