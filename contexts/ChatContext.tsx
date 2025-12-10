@@ -247,6 +247,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
+      // Optimistically add message to state to ensure immediate visibility
+      setConversationHistory((prev) => [...prev, optimisticEntry]);
+
       const conversationId = await ensureConversation(content);
       if (!conversationId) return null;
       try {
@@ -264,6 +267,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return conversationId;
       } catch (error) {
         console.error("Failed to append message", error);
+        // Rollback optimistic update on error if needed, but for now we rely on re-sync
         return null;
       }
     },
@@ -320,4 +324,3 @@ export function useChat() {
   }
   return context;
 }
-
