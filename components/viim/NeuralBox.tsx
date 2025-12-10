@@ -30,6 +30,7 @@ import {
   MoreHorizontal,
   Search,
   Square,
+  Lock,
 } from "lucide-react";
 import { processWhisper } from "@/lib/models/whisper";
 import {
@@ -42,6 +43,8 @@ import {
 import { processElevenLabs, processSuno, processHume, processRunway } from "@/lib/models/audioModels";
 import { MobileKeyboardMock } from "@/components/mobile/MobileKeyboardMock";
 import ReactMarkdown from "react-markdown";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface NeuralBoxProps {
   audioDeviceId?: string;
@@ -94,7 +97,9 @@ export function NeuralBox({
   } = useChat();
 
   const { currentUser } = useAuth();
+  const router = useRouter();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
 
   const [textInput, setTextInput] = useState("");
   const [isProcessingInput, setIsProcessingInput] = useState(false);
@@ -129,9 +134,6 @@ export function NeuralBox({
     isUser: boolean;
     messageId: string;
   }) => {
-    // For final messages, we don't animate if it's user, or we could.
-    // Simulating typing effect for history if desired, but here we just render.
-    // If it's the *currently streaming* message, we handle that in the parent render loop.
     return (
       <div className="relative">
         <ReactMarkdown
@@ -223,7 +225,6 @@ export function NeuralBox({
         return;
       }
       
-      // Process audio by transcribing then routing to the chosen LLM
       try {
         const transcription = await processWhisper(audioBlob);
 
@@ -235,8 +236,6 @@ export function NeuralBox({
             await appendMessageToConversation("user", trimmedTranscript, { avatarType: "user" });
           }
           
-          // Streaming logic not fully implemented for voice yet in this refactor step,
-          // falling back to standard call but routing through processLLM wrapper.
           await handleLLMRequest(selectedModel, transcription.text);
 
         } else {
@@ -256,7 +255,8 @@ export function NeuralBox({
 
   // Unified LLM Request Handler with Streaming
   const handleLLMRequest = async (modelId: string, text: string) => {
-    // Cancel any existing request
+    if (limitReached) return;
+
     if (abortControllerRef.current) {
         abortControllerRef.current.abort();
     }
@@ -280,19 +280,21 @@ export function NeuralBox({
         
         if (response.error) {
             if (response.error === "Request aborted") {
-                // Determine if we should save partial content
                 if (streamingContent.trim()) {
                      await appendMessageToConversation("assistant", streamingContent, {
                         avatarType: "neural",
                         model: modelId,
                     });
                 }
+            } else if (response.error.includes("limit_reached") || response.error.includes("limit reached") || response.error.includes("FREE_TRIAL_EXHAUSTED")) {
+                 setLimitReached(true);
+                 setUsageWarning("You’ve reached the free trial limit for +AI.");
+                 setState("idle");
             } else {
                  setUsageWarning(response.error);
             }
         } else if (response.text) {
              setUsageWarning(null);
-             // Finalize message
              await appendMessageToConversation("assistant", response.text, {
                 avatarType: "neural",
                 model: modelId,
@@ -303,7 +305,9 @@ export function NeuralBox({
         console.error("LLM Error:", error);
     } finally {
         setStreamingContent("");
-        setState("idle");
+        if (!limitReached) {
+            setState("idle");
+        }
         setIsProcessingInput(false);
         abortControllerRef.current = null;
     }
@@ -347,12 +351,10 @@ export function NeuralBox({
     setHasActivatedOnce(true);
     setShowGreeting(true);
     
-    // Auto-start voice recording if in voice mode, or focus text input
     setTimeout(async () => {
       if (inputMode === "voice") {
         try {
           await startRecording();
-          // Set recording state after a brief delay to ensure stream is ready
           setTimeout(() => {
             if (isRecording) {
               setState("recording");
@@ -367,7 +369,6 @@ export function NeuralBox({
     }, 600);
   };
 
-  // Handle NeuralBox activation (tap on idle box)
   const handleActivate = async () => {
     if (!isActivated && state === "idle") {
       if (!currentUser) {
@@ -378,7 +379,6 @@ export function NeuralBox({
     }
   };
 
-  // Auto-open auth modal on mount when requested and unauthenticated
   useEffect(() => {
     if (openAuthOnMount && !currentUser) {
       setShowAuthModal(true);
@@ -387,20 +387,15 @@ export function NeuralBox({
 
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
-    // Immediately activate after login
     performActivation();
   };
 
-  // Sync recording state with isRecording from recorder
   useEffect(() => {
     if (isRecording && state !== "recording") {
       setState("recording");
-    } else if (!isRecording && state === "recording") {
-      // Don't auto-change state here, let onAudioData handle it
     }
   }, [isRecording, state]);
 
-  // Handle text input submit
   const handleTextSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!textInput.trim() || isProcessingInput) return;
@@ -409,6 +404,8 @@ export function NeuralBox({
       setShowAuthModal(true);
       return;
     }
+
+    if (limitReached) return;
 
     setIsProcessingInput(true);
     setState("processing");
@@ -429,7 +426,6 @@ export function NeuralBox({
     if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
-        // The handleLLMRequest catch/finally block will handle state cleanup
     }
   };
 
@@ -439,7 +435,11 @@ export function NeuralBox({
       return;
     }
 
-    // Stop button logic if streaming/processing
+    if (limitReached) {
+        router.push("/pricing");
+        return;
+    }
+
     if (state === "processing" || state === "speaking") {
         handleStop();
         return;
@@ -475,7 +475,6 @@ export function NeuralBox({
     setIsModelMenuOpen(false);
   };
 
-  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -485,7 +484,6 @@ export function NeuralBox({
     textarea.style.overflowY = textarea.scrollHeight > nextHeight ? "auto" : "hidden";
   }, [textInput]);
 
-  // Surface internal state changes to parent components
   useEffect(() => {
     onStateChange?.(state);
   }, [state, onStateChange]);
@@ -504,7 +502,6 @@ export function NeuralBox({
     }
   }, [conversationHistory, hasActivatedOnce, isActivated, setIsActivated, setShowGreeting]);
 
-  // Auto-scroll to bottom when new messages appear or during streaming
   useEffect(() => {
     if (!scrollContainerRef.current || userHasScrolled) return;
     
@@ -515,11 +512,10 @@ export function NeuralBox({
     };
 
     scrollToBottom();
-    const timer = setTimeout(scrollToBottom, 50); // Slight delay for DOM update
+    const timer = setTimeout(scrollToBottom, 50);
     return () => clearTimeout(timer);
   }, [conversationHistory, userHasScrolled, streamingContent]);
 
-  // Detect manual scroll and pause auto-scroll
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -536,10 +532,9 @@ export function NeuralBox({
   const isVoiceMode = inputMode === "voice";
   const canSendText = Boolean(textInput.trim());
   
-  // Update button state logic
   const showStopButton = state === "processing" || state === "speaking" || isProcessingInput;
   const primaryButtonDisabled = isVoiceMode
-    ? false // Voice mode handles its own states
+    ? false 
     : !canSendText && !showStopButton;
 
   const isActive = state === "listening" || state === "recording" || state === "processing" || state === "speaking";
@@ -553,6 +548,34 @@ export function NeuralBox({
         onSuccess={handleAuthSuccess}
       />
       
+      {limitReached && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-300">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
+                      <Lock className="h-6 w-6" />
+                  </div>
+                  <h2 className="mb-2 text-xl font-bold text-gray-900">You’ve reached your free +AI limit</h2>
+                  <p className="mb-6 text-sm text-gray-600">
+                      You’ve used all your free messages. Upgrade to continue using 1,000+ AI models in one secure workspace, with higher limits and priority performance.
+                  </p>
+                  <div className="flex flex-col gap-3">
+                      <Link 
+                        href="/pricing" 
+                        className="flex w-full items-center justify-center rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white transition hover:scale-[1.02]"
+                      >
+                          Upgrade now
+                      </Link>
+                      <button 
+                        onClick={() => setLimitReached(false)} 
+                        className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-50"
+                      >
+                          Not now
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-3 pb-44 pt-6 sm:px-6"
@@ -563,10 +586,6 @@ export function NeuralBox({
           {conversationHistory.length > 0 &&
             conversationHistory.map((entry) => {
               const isUser = entry.sender === "user";
-              const speakerLabel = isUser
-                ? "You"
-                : getModelById(entry.model || selectedModel)?.name || "Super Plus AI";
-
               return (
                 <div
                   key={entry.id}
@@ -611,16 +630,6 @@ export function NeuralBox({
                             minute: "2-digit",
                           })}
                         </span>
-                        {entry.model && (
-                          <span className="px-2 py-0.5 text-gray-600 text-[11px] whitespace-nowrap flex-shrink-0">
-                            {entry.model}
-                          </span>
-                        )}
-                        {entry.tokenCount !== undefined && (
-                          <span className="px-2 py-0.5 text-gray-600 text-[11px] whitespace-nowrap flex-shrink-0">
-                            {entry.tokenCount} tokens
-                          </span>
-                        )}
                       </div>
                     )}
                   </div>
@@ -668,8 +677,6 @@ export function NeuralBox({
               </button>
             </div>
           )}
-
-          {/* Empty state removed to allow user prompt as the first bubble */}
         </div>
       </div>
 
@@ -780,7 +787,7 @@ export function NeuralBox({
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
                     placeholder={isVoiceMode ? "Voice mode active" : "What up?"}
-                    disabled={isVoiceMode || isProcessingInput}
+                    disabled={isVoiceMode || isProcessingInput || limitReached}
                     rows={1}
                     className="w-full flex-1 resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
                     onKeyDown={(e) => {
@@ -839,7 +846,16 @@ export function NeuralBox({
                   primaryButtonDisabled && Boolean(currentUser) ? "cursor-not-allowed opacity-40" : "hover:scale-[1.02]"
                 }`}
               >
-                {showStopButton ? (
+                {limitReached ? (
+                     <>
+                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-red-600 shadow-lg">
+                            <Lock className="h-3 w-3 text-white" />
+                        </div>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                            Upgrade
+                        </span>
+                     </>
+                ) : showStopButton ? (
                    <>
                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-black shadow-lg">
                            <Square className="h-3 w-3 text-white fill-white" />

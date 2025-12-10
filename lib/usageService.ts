@@ -1,6 +1,7 @@
 import { getAdminFirestore } from "@/lib/firebase/admin";
 import type { UsageLog, UsageSummary, UsageProvider } from "@/types/usage";
 import { estimateCostUSD } from "./usageCosts";
+import { FreeTrialStatus, UserSubscription } from "@/lib/data/types";
 
 function assertAdminDb() {
   try {
@@ -20,6 +21,11 @@ function getDailyKey(date = new Date()) {
 function getMonthlyKey(date = new Date()) {
   return date.toISOString().slice(0, 7);
 }
+
+// Default limits
+const FREE_TRIAL_REQUEST_CAP = 25; // small trial
+const FREE_PLAN_DAILY_TOKEN_CAP = 50000;
+const PLUS_PLAN_DAILY_TOKEN_CAP = 1000000;
 
 export async function logUsage(params: {
   userId: string;
@@ -61,7 +67,7 @@ export async function logUsage(params: {
         userId: params.userId,
         daily: {},
         monthly: {},
-        dailyTokenLimit: 100000,
+        dailyTokenLimit: FREE_PLAN_DAILY_TOKEN_CAP,
         monthlyCostLimitUSD: 10,
         updatedAt: now.getTime(),
       };
@@ -79,6 +85,27 @@ export async function logUsage(params: {
       summary.daily[dailyKey] = dailyBucket;
       summary.monthly[monthlyKey] = monthlyBucket;
       summary.updatedAt = now.getTime();
+
+      // Free trial tracking
+      if (!summary.freeTrial) {
+          summary.freeTrial = {
+              totalRequestsUsed: 0,
+              totalRequestsCap: FREE_TRIAL_REQUEST_CAP,
+              isLocked: false
+          };
+      }
+      
+      if (!summary.freeTrial.isLocked) {
+           summary.freeTrial.totalRequestsUsed += 1;
+           if (summary.freeTrial.totalRequestsUsed >= summary.freeTrial.totalRequestsCap) {
+                // Only lock if they are strictly on the "free" plan.
+                // We'll check subscription doc or just lock here and let checkUsageAllowed handle overrides for paid plans.
+                // Better approach: just increment here. Usage check logic will decide if "isLocked" blocks them based on plan.
+                // However, to persist the "locked" state for UI, we can set it.
+                // But we must be careful not to lock paid users who just happen to have this field.
+                // For now, we update usage count. The lock check happens in checkUsageAllowed.
+           }
+      }
 
       transaction.set(summaryRef, summary);
     });
@@ -120,16 +147,58 @@ export async function getUsageSummary(userId: string): Promise<UsageSummary> {
   return snap.data() as UsageSummary;
 }
 
-export async function checkUsageAllowed(userId: string): Promise<{ allowed: boolean; reason?: string }> {
-  // Anonymous users bypass strict checks for now, or you can block them
+export async function checkUsageAllowed(userId: string): Promise<{ allowed: boolean; reason?: string; code?: string }> {
   if (userId === "anonymous") return { allowed: true };
 
+  const firestore = assertAdminDb();
+  if (!firestore) return { allowed: true };
+
+  // 1. Fetch Subscription Plan
+  let plan = "free";
+  const subRef = firestore.collection("subscriptions").doc(userId);
+  const subSnap = await subRef.get();
+  if (subSnap.exists) {
+      const subData = subSnap.data() as UserSubscription;
+      if (subData.status === "active" || subData.status === "trialing") {
+          plan = subData.planId; // "plus", "super", etc.
+      }
+  }
+
+  // 2. Fetch Usage Summary
   const summary = await getUsageSummary(userId);
+  
+  // 3. Check Free Trial Limits (Only for Free Plan)
+  if (plan === "free") {
+      const trial = summary.freeTrial || { totalRequestsUsed: 0, totalRequestsCap: FREE_TRIAL_REQUEST_CAP, isLocked: false };
+      
+      // If already marked locked, or usage exceeds cap
+      if (trial.isLocked || trial.totalRequestsUsed >= trial.totalRequestsCap) {
+          // Ensure we persist the lock state if not set
+          if (!trial.isLocked) {
+              const summaryRef = firestore.collection("usageSummary").doc(userId);
+              await summaryRef.update({ 
+                  "freeTrial.isLocked": true,
+                  "freeTrial.lockedAt": Date.now() 
+              }).catch(console.error);
+          }
+          
+          return { 
+              allowed: false, 
+              reason: "You’ve reached the free trial limit for +AI.", 
+              code: "FREE_TRIAL_EXHAUSTED" 
+          };
+      }
+  }
+
+  // 4. Check Daily/Monthly Safety Caps (For all users, higher for paid)
   const dailyKey = getDailyKey();
   const monthlyKey = getMonthlyKey();
-
+  
   const dailyTokens = summary.daily[dailyKey]?.tokens ?? 0;
-  if (dailyTokens >= summary.dailyTokenLimit) {
+  // Dynamic limit based on plan
+  const dailyLimit = (plan === "plus" || plan === "super") ? PLUS_PLAN_DAILY_TOKEN_CAP : FREE_PLAN_DAILY_TOKEN_CAP;
+
+  if (dailyTokens >= dailyLimit) {
     return { allowed: false, reason: "Daily token limit reached" };
   }
 

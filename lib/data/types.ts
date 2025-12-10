@@ -98,3 +98,9 @@ export interface UserSubscription extends BaseDocument {
   checkoutSessionId?: string;
 }
 
+export interface FreeTrialStatus {
+    totalRequestsUsed: number;
+    totalRequestsCap: number;
+    isLocked: boolean;
+    lockedAt?: number;
+}
