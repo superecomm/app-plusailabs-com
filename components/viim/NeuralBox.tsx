@@ -448,7 +448,7 @@ export function NeuralBox({
     if (inputMode === "voice") {
       if (state === "recording") {
         stopRecording();
-      } else if (state !== "processing") {
+      } else {
         try {
           await startRecording();
           setTimeout(() => {
