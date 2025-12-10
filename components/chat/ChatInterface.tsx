@@ -38,6 +38,15 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
   const [viewMode, setViewMode] = useState<"chat" | "explore">("chat");
+  // Explore Coming-Soon overlay
+  const [showExploreOverlay, setShowExploreOverlay] = useState(false);
+  const [exploreStep, setExploreStep] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const seen = window.sessionStorage.getItem("exploreSeen");
+      return seen ? 3 : 1;
+    }
+    return 1;
+  });
   const [selectedMedia, setSelectedMedia] = useState<{ title: string; author: string; views: string; duration?: string; category?: string } | null>(null);
 
   const exploreFeed: Array<
@@ -245,8 +254,11 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                   </button>
                   <button
                     type="button"
-                    aria-pressed={viewMode === "explore"}
-                    onClick={() => setViewMode("explore")}
+                    aria-pressed={false}
+                    onClick={() => {
+                      setShowExploreOverlay(true);
+                      setViewMode("chat");
+                    }}
                     className={`pb-1 transition ${
                       viewMode === "explore"
                         ? "text-gray-900 border-b-2 border-gray-900"
@@ -277,104 +289,8 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                 openAuthOnMount={!currentUser && autoAuth}
               />
             ) : (
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pb-2 pt-0">
-                {exploreFeed.map((block, idx) =>
-                  block.kind === "row" ? (
-                    <div key={`${block.title}-${idx}`} className="space-y-3">
-                      <div className="flex items-center justify-between px-1">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-gray-400">
-                            Explore
-                          </p>
-                          <h3 className="text-lg font-semibold text-gray-900">{block.title}</h3>
-                        </div>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <div className="flex gap-4 pb-2">
-                          {block.items.map((item) => (
-                            <div
-                              key={item.title}
-                              className="w-56 min-w-[14rem] bg-white cursor-pointer transition hover:opacity-90"
-                              onClick={() => setSelectedMedia(item)}
-                            >
-                            <div className="relative h-32 w-full overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700">
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-                                <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">
-                                  {item.duration}
-                                </div>
-                              </div>
-                              <div className="space-y-2 p-3">
-                                <div className="flex items-start gap-2">
-                                  <div className="h-8 w-8 rounded-full bg-gray-300 flex-shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-gray-900 line-clamp-2">{item.title}</p>
-                                    <p className="text-xs text-gray-500">{item.author}</p>
-                                    <p className="text-xs text-gray-500">{item.views}</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs">
-                                  <button className="flex items-center gap-1 text-gray-600 hover:text-gray-900" onClick={(e) => e.stopPropagation()}>
-                                    <span className="text-base">+</span>
-                                    <span>124</span>
-                                  </button>
-                                  <button className="flex items-center gap-1 text-gray-600 hover:text-gray-900" onClick={(e) => e.stopPropagation()}>
-                                    <span className="text-base">−</span>
-                                    <span>8</span>
-                                  </button>
-                                  <button className="text-gray-600 hover:text-gray-900" onClick={(e) => e.stopPropagation()}>
-                                    💬 23
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      key={`${block.title}-${idx}`}
-                      className="mx-auto w-full max-w-4xl bg-white cursor-pointer transition hover:opacity-90"
-                      onClick={() => setSelectedMedia(block)}
-                    >
-                      <div className="relative h-56 w-full overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700">
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/35 to-transparent" />
-                        {block.duration && (
-                          <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-0.5 text-[11px] font-semibold text-white">
-                            {block.duration}
-                          </div>
-                        )}
-                      </div>
-                      <div className="space-y-2 p-3">
-                        <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400">
-                          <span>{block.category}</span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <div className="h-10 w-10 rounded-full bg-gray-300 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-semibold text-gray-900 line-clamp-2">{block.title}</p>
-                            <p className="text-[11px] text-gray-500">
-                              {block.author} • {block.views}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs">
-                          <button className="flex items-center gap-1 text-gray-600 hover:text-gray-900" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-base">+</span>
-                            <span>324</span>
-                          </button>
-                          <button className="flex items-center gap-1 text-gray-600 hover:text-gray-900" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-base">−</span>
-                            <span>12</span>
-                          </button>
-                          <button className="text-gray-600 hover:text-gray-900" onClick={(e) => e.stopPropagation()}>
-                            💬 45
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                )}
+              <div className="flex-1 min-h-0 flex items-center justify-center text-gray-500">
+                  {/* Explore feed disabled until launch */}
               </div>
             )}
           </div>
@@ -512,6 +428,45 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
             </div>
           </div>
         )}
+      {/* Explore Coming Soon Overlay */}
+      {showExploreOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-300">
+            {exploreStep === 1 && (
+              <>
+                <h2 className="mb-2 text-xl font-bold text-gray-900">Explore is evolving
+</h2>
+                <p className="mb-6 text-sm text-gray-600">A brand-new AI-powered social feed is coming.<br/>Creators, artists, and sellers will be the first to shape it.</p>
+                <button onClick={() => setExploreStep(2)} className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white">Next</button>
+              </>
+            )}
+            {exploreStep === 2 && (
+              <>
+                <h2 className="mb-2 text-xl font-bold text-gray-900">Designed for Creators, Artists & Sellers</h2>
+                <ul className="mb-6 space-y-2 text-sm text-gray-700 list-disc pl-4">
+                  <li>Creators – Build multi-model content</li>
+                  <li>Artists – Showcase voice, visual, and written AI creations</li>
+                  <li>Sellers – Sell digital & physical products with +AI identity protection</li>
+                </ul>
+                <button onClick={() => setExploreStep(3)} className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white">Next</button>
+              </>
+            )}
+            {exploreStep === 3 && (
+              <>
+                <h2 className="mb-2 text-xl font-bold text-gray-900">Become a Founding Beta Member</h2>
+                <p className="mb-6 text-sm text-gray-600">Get early access, influence the feed, and bring your audience. Limited seats for creators & early sellers.</p>
+                <div className="flex flex-col gap-3">
+                  <Link href="/beta-waitlist" className="flex w-full items-center justify-center rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white">Join Beta</Link>
+                  <button onClick={() => {
+                      setShowExploreOverlay(false);
+                      window.sessionStorage.setItem("exploreSeen", "1");
+                  }} className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50">Close</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       </div>
   );
 }
