@@ -29,6 +29,7 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
   Search,
+  Square,
 } from "lucide-react";
 import { processWhisper } from "@/lib/models/whisper";
 import {
@@ -115,6 +116,10 @@ export function NeuralBox({
   );
   const [thinkingIndex, setThinkingIndex] = useState(0);
 
+  // Streaming State
+  const [streamingContent, setStreamingContent] = useState("");
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const AnimatedContent = ({
     text,
     isUser,
@@ -124,29 +129,9 @@ export function NeuralBox({
     isUser: boolean;
     messageId: string;
   }) => {
-    const [display, setDisplay] = useState(isUser ? text : "");
-    const doneRef = useRef(false);
-    const [showCursor, setShowCursor] = useState(!isUser);
-
-    useEffect(() => {
-      if (isUser) return;
-      if (doneRef.current) return;
-
-      const words = text.split(" ");
-      let idx = 0;
-      const interval = setInterval(() => {
-        idx++;
-        setDisplay(words.slice(0, idx).join(" "));
-        if (idx >= words.length) {
-          doneRef.current = true;
-          setShowCursor(false);
-          clearInterval(interval);
-        }
-      }, 30);
-
-      return () => clearInterval(interval);
-    }, [isUser, text]);
-
+    // For final messages, we don't animate if it's user, or we could.
+    // Simulating typing effect for history if desired, but here we just render.
+    // If it's the *currently streaming* message, we handle that in the parent render loop.
     return (
       <div className="relative">
         <ReactMarkdown
@@ -167,11 +152,8 @@ export function NeuralBox({
             },
           }}
         >
-          {display || " "}
+          {text || " "}
         </ReactMarkdown>
-        {showCursor && !doneRef.current && (
-          <span className="inline-block w-0.5 h-5 bg-gray-900 ml-0.5 animate-pulse" />
-        )}
       </div>
     );
   };
@@ -253,25 +235,10 @@ export function NeuralBox({
             await appendMessageToConversation("user", trimmedTranscript, { avatarType: "user" });
           }
           
-          // Get LLM response
-          const llmResponse = await processLLM(selectedModel, transcription.text);
-          if (llmResponse.error) {
-            setUsageWarning(llmResponse.error);
-            setState("idle");
-            return;
-          }
-          if (llmResponse.text) {
-            setUsageWarning(null);
-            setState("speaking");
-            await appendMessageToConversation("assistant", llmResponse.text, {
-              avatarType: "neural",
-              model: selectedModel,
-            });
-            onResponse?.(llmResponse.text);
-            setTimeout(() => setState("idle"), 3000);
-          } else {
-            setState("idle");
-          }
+          // Streaming logic not fully implemented for voice yet in this refactor step,
+          // falling back to standard call but routing through processLLM wrapper.
+          await handleLLMRequest(selectedModel, transcription.text);
+
         } else {
           setState("idle");
         }
@@ -287,20 +254,76 @@ export function NeuralBox({
     },
   });
 
+  // Unified LLM Request Handler with Streaming
+  const handleLLMRequest = async (modelId: string, text: string) => {
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    setStreamingContent("");
+    setState("speaking"); // Use speaking state to indicate streaming
+
+    try {
+        const onToken = (token: string) => {
+            setStreamingContent((prev) => prev + token);
+        };
+        
+        const options = {
+            onToken,
+            signal: abortController.signal
+        };
+
+        const response = await processLLM(modelId, text, options);
+        
+        if (response.error) {
+            if (response.error === "Request aborted") {
+                // Determine if we should save partial content
+                if (streamingContent.trim()) {
+                     await appendMessageToConversation("assistant", streamingContent, {
+                        avatarType: "neural",
+                        model: modelId,
+                    });
+                }
+            } else {
+                 setUsageWarning(response.error);
+            }
+        } else if (response.text) {
+             setUsageWarning(null);
+             // Finalize message
+             await appendMessageToConversation("assistant", response.text, {
+                avatarType: "neural",
+                model: modelId,
+             });
+             onResponse?.(response.text);
+        }
+    } catch (error) {
+        console.error("LLM Error:", error);
+    } finally {
+        setStreamingContent("");
+        setState("idle");
+        setIsProcessingInput(false);
+        abortControllerRef.current = null;
+    }
+  };
+
+
   // Process LLM response
-  const processLLM = async (modelId: string, text: string): Promise<ModelResponse> => {
+  const processLLM = async (modelId: string, text: string, options?: any): Promise<ModelResponse> => {
     try {
       switch (modelId) {
         case "gpt-5.1":
-          return await processGPT(text);
+          return await processGPT(text, options);
         case "gpt-5.1-code":
-          return await processGPTCode(text);
+          return await processGPTCode(text, options);
         case "claude-3.5":
-          return await processClaude(text);
+          return await processClaude(text, options);
         case "sonnet-4.5":
-          return await processSonnet(text);
+          return await processSonnet(text, options);
         case "gemini-1.5":
-          return await processGemini(text);
+          return await processGemini(text, options);
         case "elevenlabs":
           return await processElevenLabs(text);
         case "suno":
@@ -310,7 +333,7 @@ export function NeuralBox({
         case "runway":
           return await processRunway(text);
         default:
-          return await processGPT(text);
+          return await processGPT(text, options);
       }
     } catch (error) {
       console.error("Error processing LLM:", error);
@@ -397,36 +420,16 @@ export function NeuralBox({
     const trimmedInput = textInput.trim();
     setLastPrompt(trimmedInput);
     await appendMessageToConversation("user", trimmedInput, { avatarType: "user" });
+    setTextInput("");
 
-    try {
-      const response = await processLLM(selectedModel, trimmedInput);
-      if (response.error) {
-        setUsageWarning(response.error);
-        setState("idle");
-        setIsProcessingInput(false);
-        return;
-      }
-      if (response.text) {
-        setUsageWarning(null);
-        setState("speaking");
-        await appendMessageToConversation("assistant", response.text, {
-          avatarType: "neural",
-          model: selectedModel,
-        });
-        onResponse?.(response.text);
-        setTextInput("");
-        setTimeout(() => {
-          setState("idle");
-          setIsProcessingInput(false);
-        }, 3000);
-      } else {
-        setState("idle");
-        setIsProcessingInput(false);
-      }
-    } catch (error) {
-      console.error("Error processing text:", error);
-      setState("idle");
-      setIsProcessingInput(false);
+    await handleLLMRequest(selectedModel, trimmedInput);
+  };
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+        // The handleLLMRequest catch/finally block will handle state cleanup
     }
   };
 
@@ -434,6 +437,12 @@ export function NeuralBox({
     if (!currentUser) {
       setShowAuthModal(true);
       return;
+    }
+
+    // Stop button logic if streaming/processing
+    if (state === "processing" || state === "speaking") {
+        handleStop();
+        return;
     }
 
     if (inputMode === "voice") {
@@ -450,7 +459,7 @@ export function NeuralBox({
         }
       }
     } else {
-      if (!textInput.trim() || isProcessingInput || state === "processing") return;
+      if (!textInput.trim() || isProcessingInput) return;
       handleTextSubmit();
     }
   };
@@ -508,7 +517,7 @@ export function NeuralBox({
     scrollToBottom();
     const timer = setTimeout(scrollToBottom, 50); // Slight delay for DOM update
     return () => clearTimeout(timer);
-  }, [conversationHistory, userHasScrolled]);
+  }, [conversationHistory, userHasScrolled, streamingContent]);
 
   // Detect manual scroll and pause auto-scroll
   useEffect(() => {
@@ -526,10 +535,14 @@ export function NeuralBox({
 
   const isVoiceMode = inputMode === "voice";
   const canSendText = Boolean(textInput.trim());
+  
+  // Update button state logic
+  const showStopButton = state === "processing" || state === "speaking" || isProcessingInput;
   const primaryButtonDisabled = isVoiceMode
-    ? state === "processing" || isProcessingInput
-    : !canSendText || isProcessingInput;
-  const isActive = state === "listening" || state === "recording" || state === "processing";
+    ? false // Voice mode handles its own states
+    : !canSendText && !showStopButton;
+
+  const isActive = state === "listening" || state === "recording" || state === "processing" || state === "speaking";
   const promptVisible = forcePromptVisible || isActivated;
 
   return (
@@ -615,7 +628,20 @@ export function NeuralBox({
               );
             })}
 
-          {state === "processing" && (
+            {/* Streaming Bubble */}
+            {streamingContent && (
+                 <div className="flex w-full justify-start bg-gray-50/60 py-5 px-3">
+                     <div className="flex flex-col gap-3 w-full max-w-4xl">
+                        <article className="bg-transparent text-gray-900 px-2">
+                             <div className="space-y-3 text-[15px] leading-7 text-gray-900">
+                                <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" />
+                             </div>
+                        </article>
+                     </div>
+                 </div>
+            )}
+
+          {state === "processing" && !streamingContent && (
             <article className="flex items-center gap-3 rounded-[24px] border border-gray-100 bg-gray-50/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
                 <VIIMAnimation state="processing" size="xxs" />
@@ -813,18 +839,31 @@ export function NeuralBox({
                   primaryButtonDisabled && Boolean(currentUser) ? "cursor-not-allowed opacity-40" : "hover:scale-[1.02]"
                 }`}
               >
-                <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-black shadow-lg">
-                  <VIIMAnimation
-                    state={state}
-                    size="xxs"
-                    container="square"
-                    visualStyle="particles"
-                    audioStream={getAudioStream()}
-                  />
-                </div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-                  {isVoiceMode ? (state === "recording" ? "Stop" : "Speak") : "Send"}
-                </span>
+                {showStopButton ? (
+                   <>
+                       <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-black shadow-lg">
+                           <Square className="h-3 w-3 text-white fill-white" />
+                       </div>
+                       <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                           Stop
+                       </span>
+                   </>
+                ) : (
+                    <>
+                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-black shadow-lg">
+                          <VIIMAnimation
+                            state={state}
+                            size="xxs"
+                            container="square"
+                            visualStyle="particles"
+                            audioStream={getAudioStream()}
+                          />
+                        </div>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                          {isVoiceMode ? (state === "recording" ? "Stop" : "Speak") : "Send"}
+                        </span>
+                    </>
+                )}
               </button>
             </div>
           </div>
