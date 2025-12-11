@@ -10,7 +10,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { StatusModal } from "@/components/StatusModal";
 import { NeuralBox } from "@/components/viim/NeuralBox";
 import type { VoiceLockDataset, VoiceLockProfile } from "@/types/voiceLock";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Edit2, Trash2, MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import plusAi from "@/assets/plusailabs brand assets/plusai-full-logo-black.png";
 
@@ -334,45 +334,56 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
               </div>
               <div className="flex-1 overflow-y-auto space-y-3 px-5 py-4">
                 {conversationPreviews.length === 0 ? (
-                  <p className="text-sm text-gray-500">No conversations yet. Start a prompt to begin.</p>
+                  <p className="px-2 text-sm text-gray-500">No conversations yet.</p>
                 ) : (
-                  conversationPreviews
-                    .filter((preview) => preview.title.toLowerCase().includes(historyQuery.toLowerCase()))
-                    .map((preview) => (
-                      <div
-                        key={preview.id}
-                        className="rounded-2xl border border-gray-100 bg-white/90 px-4 py-3 shadow-sm transition hover:border-gray-200"
-                      >
-                        <button
-                          onClick={() => handleSelectConversation(preview.id)}
-                          className="w-full text-left"
+                  <div className="flex flex-col gap-1">
+                    {conversationPreviews
+                      .filter((preview) => preview.title.toLowerCase().includes(historyQuery.toLowerCase()))
+                      .map((preview) => (
+                        <div
+                          key={preview.id}
+                          className={`group relative flex items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors ${
+                            currentConversationId === preview.id ? "bg-gray-100 font-medium text-gray-900" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                          }`}
                         >
-                          <p className="font-semibold text-gray-900">{preview.title || "Untitled"}</p>
-                          <p className="text-xs text-gray-400">
-                            {formatDistanceToNow(new Date(preview.updatedAt), { addSuffix: true })}
-                          </p>
-                        </button>
-                        <div className="mt-2 flex items-center justify-end gap-2 text-xs text-gray-500">
+                          <MessageSquare className="h-4 w-4 shrink-0 opacity-50" />
+                          
                           <button
-                            onClick={() => {
-                              const nextTitle = prompt("Rename conversation", preview.title);
-                              if (nextTitle?.trim()) {
-                                renameConversation(preview.id, nextTitle.trim());
-                              }
-                            }}
-                            className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
+                            onClick={() => handleSelectConversation(preview.id)}
+                            className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left"
+                            title={preview.title}
                           >
-                            Rename
+                            {preview.title || "Untitled"}
                           </button>
-                          <button
-                            onClick={() => removeConversation(preview.id)}
-                            className="rounded-full border border-gray-200 px-2 py-1 hover:bg-gray-50"
-                          >
-                            Delete
-                          </button>
+
+                          <div className="hidden items-center gap-1 opacity-0 transition-opacity group-hover:flex group-hover:opacity-100 bg-white/50 backdrop-blur-sm rounded-md ml-auto pl-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const nextTitle = prompt("Rename conversation", preview.title);
+                                if (nextTitle?.trim()) {
+                                  renameConversation(preview.id, nextTitle.trim());
+                                }
+                              }}
+                              className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                              title="Rename"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeConversation(preview.id);
+                              }}
+                              className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+                  </div>
                 )}
               </div>
               <div className="border-t border-gray-100 px-5 py-4">

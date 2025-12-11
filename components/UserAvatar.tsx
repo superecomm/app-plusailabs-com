@@ -17,6 +17,7 @@ export function UserAvatar({ onDeviceChange }: UserAvatarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [datasets, setDatasets] = useState<ViimDataset[]>([]);
   const [showNewDatasetModal, setShowNewDatasetModal] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const { currentUser, logout } = useAuth();
   const router = useRouter();
 
@@ -112,17 +113,19 @@ export function UserAvatar({ onDeviceChange }: UserAvatarProps) {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="relative w-8 h-8 rounded-full bg-[#F7F7F8] flex items-center justify-center hover:bg-[#E5E7EB] transition-colors border border-[#E5E7EB]"
+        className="relative w-6 h-6 shrink-0 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors border border-gray-200 overflow-hidden"
         aria-label="User menu"
       >
-        {getAvatarUrl() ? (
+        {getAvatarUrl() && !imageError ? (
           <img
             src={getAvatarUrl()!}
             alt="User avatar"
-            className="w-full h-full rounded-full object-cover"
+            className="w-full h-full object-cover"
+            onError={() => setImageError(true)}
+            referrerPolicy="no-referrer"
           />
         ) : (
-          <span className="text-xs font-medium text-[#111111]">
+          <span className="text-[10px] font-medium text-gray-700">
             {getInitials()}
           </span>
         )}
