@@ -64,6 +64,66 @@ interface NeuralBoxProps {
   openAuthOnMount?: boolean;
 }
 
+const AnimatedContent = ({
+  text,
+  isUser,
+  messageId,
+}: {
+  text: string;
+  isUser: boolean;
+  messageId: string;
+}) => {
+  return (
+    <div className="relative chat-response">
+      <ReactMarkdown
+        components={{
+          p: ({ node, ...props }) => (
+            <p 
+              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
+                isUser ? "text-white" : "text-gray-900"
+              }`} 
+              {...props} 
+            />
+          ),
+          li: ({ node, ...props }) => (
+            <li 
+              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
+                isUser ? "text-white" : "text-gray-900"
+              }`} 
+              {...props} 
+            />
+          ),
+          ul: ({ node, ...props }) => (
+            <ul className={`mb-2.5 pl-5 list-disc ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+          ),
+          ol: ({ node, ...props }) => (
+            <ol className={`mb-2.5 pl-5 list-decimal ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+          ),
+          h1: ({ node, ...props }) => (
+            <h1 className={`mt-4 mb-1.5 text-xl font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+          ),
+          h2: ({ node, ...props }) => (
+            <h2 className={`mt-4 mb-1.5 text-lg font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+          ),
+          h3: ({ node, ...props }) => (
+            <h3 className={`mt-4 mb-1.5 text-base font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+          ),
+          code: ({ node, className, ...props }: any) => {
+            const isInline = !className?.includes('language-');
+            return isInline ? (
+              <code className="bg-gray-100 text-gray-900 px-1.5 py-0.5 rounded text-sm font-mono" {...props} />
+            ) : (
+              <code className="block bg-gray-900 text-gray-100 px-4 py-3 rounded-lg text-sm font-mono overflow-x-auto my-2" {...props} />
+            );
+          },
+        }}
+      >
+        {text || " "}
+      </ReactMarkdown>
+    </div>
+  );
+};
+
 export function NeuralBox({
   audioDeviceId,
   onTranscript,
@@ -128,65 +188,6 @@ export function NeuralBox({
   const [streamingContent, setStreamingContent] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const AnimatedContent = ({
-    text,
-    isUser,
-    messageId,
-  }: {
-    text: string;
-    isUser: boolean;
-    messageId: string;
-  }) => {
-    return (
-      <div className="relative chat-response">
-        <ReactMarkdown
-          components={{
-            p: ({ node, ...props }) => (
-              <p 
-                className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
-                  isUser ? "text-white" : "text-gray-900"
-                }`} 
-                {...props} 
-              />
-            ),
-            li: ({ node, ...props }) => (
-              <li 
-                className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
-                  isUser ? "text-white" : "text-gray-900"
-                }`} 
-                {...props} 
-              />
-            ),
-            ul: ({ node, ...props }) => (
-              <ul className={`mb-2.5 pl-5 list-disc ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
-            ),
-            ol: ({ node, ...props }) => (
-              <ol className={`mb-2.5 pl-5 list-decimal ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
-            ),
-            h1: ({ node, ...props }) => (
-              <h1 className={`mt-4 mb-1.5 text-xl font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
-            ),
-            h2: ({ node, ...props }) => (
-              <h2 className={`mt-4 mb-1.5 text-lg font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
-            ),
-            h3: ({ node, ...props }) => (
-              <h3 className={`mt-4 mb-1.5 text-base font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
-            ),
-            code: ({ node, className, ...props }: any) => {
-              const isInline = !className?.includes('language-');
-              return isInline ? (
-                <code className="bg-gray-100 text-gray-900 px-1.5 py-0.5 rounded text-sm font-mono" {...props} />
-              ) : (
-                <code className="block bg-gray-900 text-gray-100 px-4 py-3 rounded-lg text-sm font-mono overflow-x-auto my-2" {...props} />
-              );
-            },
-          }}
-        >
-          {text || " "}
-        </ReactMarkdown>
-      </div>
-    );
-  };
 
   useEffect(() => {
     if (state !== "processing") return;
