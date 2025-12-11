@@ -73,6 +73,64 @@ const AnimatedContent = ({
   isUser: boolean;
   messageId: string;
 }) => {
+  const [visibleText, setVisibleText] = useState("");
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isUser) {
+      setVisibleText(text);
+      return;
+    }
+
+    if (!text) {
+      setVisibleText("");
+      return;
+    }
+
+    // If text is already fully visible, do nothing
+    if (visibleText === text) return;
+
+    // If this is a new message (text shorter than visible or completely different), reset
+    if (!visibleText || !text.startsWith(visibleText)) {
+      setVisibleText("");
+    }
+
+    let currentIndex = visibleText.length;
+    const targetText = text;
+
+    // Slower typing speed: 20ms per character
+    const typeNextChar = () => {
+      if (!isMounted.current) return;
+      
+      if (currentIndex < targetText.length) {
+        // Type 1-2 characters at a time for natural feel
+        const chunk = Math.random() > 0.5 ? 2 : 1;
+        const nextIndex = Math.min(currentIndex + chunk, targetText.length);
+        
+        setVisibleText(targetText.slice(0, nextIndex));
+        currentIndex = nextIndex;
+        
+        // Random delay between 15-30ms for natural typing feel
+        const delay = 15 + Math.random() * 15;
+        setTimeout(typeNextChar, delay);
+      }
+    };
+
+    const timeoutId = setTimeout(typeNextChar, 10);
+    return () => clearTimeout(timeoutId);
+  }, [text, isUser]);
+
+  // Use visibleText for assistant messages to show typing effect,
+  // but fall back to full text if it's the user or if we're hydrating/server-side
+  const content = isUser ? text : (visibleText || (typeof window === 'undefined' ? text : ""));
+
   return (
     <div className="relative chat-response">
       <ReactMarkdown
@@ -118,7 +176,7 @@ const AnimatedContent = ({
           },
         }}
       >
-        {text || " "}
+        {content || " "}
       </ReactMarkdown>
     </div>
   );
