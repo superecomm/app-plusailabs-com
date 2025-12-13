@@ -1514,7 +1514,7 @@ export function NeuralBox({
                 onPointerMove={handleNeuralBoxPointerMove}
                 onPointerUp={handleNeuralBoxPointerUp}
                 onPointerCancel={handleNeuralBoxPointerCancel}
-                className={`flex flex-col items-center gap-1 rounded-3xl px-2 py-1 transition ${
+                className={`flex flex-col items-center gap-1 rounded-3xl px-2 py-1 transition ml-3 ${
                   primaryButtonDisabled && Boolean(currentUser) ? "cursor-not-allowed opacity-40" : "hover:scale-[1.02]"
                 }`}
               >
