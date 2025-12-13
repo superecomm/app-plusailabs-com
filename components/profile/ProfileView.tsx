@@ -2,17 +2,65 @@
 
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { User, Settings, Smartphone, Shield, LogOut } from "lucide-react";
+import { User, Settings, Smartphone, Shield, LogOut, Camera, Edit } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { storage } from "@/lib/firebase/client";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getAuth, updateProfile } from "firebase/auth";
 
 export function ProfileView() {
-  const { userProfile, userPreferences, logout } = useAuth();
+  const { userProfile, userPreferences, logout, currentUser } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"general" | "devices" | "security">("general");
+  const [uploading, setUploading] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [displayName, setDisplayName] = useState(userProfile?.displayName || "");
 
   const handleLogout = async () => {
     await logout();
     router.push("/");
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser || !storage) return;
+
+    try {
+      setUploading(true);
+      const storageRef = ref(storage, `avatars/${currentUser.uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const photoURL = await getDownloadURL(storageRef);
+      
+      // Update Firebase Auth profile
+      const auth = getAuth();
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { photoURL });
+      }
+      
+      // Refresh page to show new photo
+      window.location.reload();
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      alert("Failed to upload photo. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUpdateName = async () => {
+    if (!currentUser) return;
+    
+    try {
+      const auth = getAuth();
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { displayName });
+        setEditingName(false);
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error("Error updating name:", error);
+      alert("Failed to update name. Please try again.");
+    }
   };
 
   return (
@@ -20,14 +68,32 @@ export function ProfileView() {
       <div className="mx-auto max-w-3xl space-y-6">
         {/* Header */}
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <div className="h-32 bg-gradient-to-r from-gray-900 to-gray-800"></div>
+          <div className="h-32 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600"></div>
           <div className="px-6 pb-6">
             <div className="relative -mt-16 mb-4 flex justify-between">
-              <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-gray-200 text-4xl font-bold text-gray-500 shadow-md">
-                {userProfile?.photoURL ? (
-                  <img src={userProfile.photoURL} alt="" className="h-full w-full rounded-full object-cover" />
-                ) : (
-                  (userProfile?.displayName?.[0] || userProfile?.email?.[0] || "U").toUpperCase()
+              <div className="relative">
+                <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-gray-200 text-4xl font-bold text-gray-500 shadow-md">
+                  {userProfile?.photoURL ? (
+                    <img src={userProfile.photoURL} alt="" className="h-full w-full rounded-full object-cover" />
+                  ) : (
+                    (userProfile?.displayName?.[0] || userProfile?.email?.[0] || "U").toUpperCase()
+                  )}
+                </div>
+                {/* Photo upload button */}
+                <label className="absolute bottom-0 right-0 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-2 border-white bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition-colors">
+                  <Camera className="h-5 w-5" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                    disabled={uploading}
+                  />
+                </label>
+                {uploading && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  </div>
                 )}
               </div>
               <div className="mt-16">
@@ -40,10 +106,49 @@ export function ProfileView() {
                  </button>
               </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{userProfile?.displayName || "User"}</h1>
-              <p className="text-sm text-gray-500">{userProfile?.email}</p>
+            <div className="flex items-center gap-3">
+              {editingName ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xl font-bold text-gray-900 focus:border-blue-500 focus:outline-none"
+                    placeholder="Your name"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleUpdateName}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingName(false);
+                      setDisplayName(userProfile?.displayName || "");
+                    }}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-2xl font-bold text-gray-900">{userProfile?.displayName || "User"}</h1>
+                  <button
+                    onClick={() => {
+                      setEditingName(true);
+                      setDisplayName(userProfile?.displayName || "");
+                    }}
+                    className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </button>
+                </>
+              )}
             </div>
+            <p className="mt-1 text-sm text-gray-500">{userProfile?.email}</p>
           </div>
         </div>
 
