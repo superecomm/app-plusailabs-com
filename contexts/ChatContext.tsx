@@ -40,6 +40,7 @@ export type ExecAction =
   | { type: 'BEGIN_ROUTING' }
   | { type: 'BEGIN_PREFLIGHT' }
   | { type: 'START_STREAMING' }
+  | { type: 'TOKEN_RECEIVED'; token: string; estimatedTokens: number }
   | { type: 'MARK_STALLED' }
   | { type: 'RESUME_STREAMING' }
   | { type: 'RETRY' }
@@ -57,6 +58,8 @@ export interface ExecStateData {
   errorCategory: LLMErrorCategory | null;
   tokenCount: number;
   charCount: number;
+  tokenBudget: number;
+  charBudget: number;
 }
 
 type PendingSubmission = {
@@ -132,6 +135,54 @@ function generateTitleFromText(text: string) {
   return trimmed.slice(0, 48) + (trimmed.length > 48 ? "…" : "");
 }
 
+// Helper: Get token budget based on subscription tier
+export function getTokenBudget(subscription?: string | null): number {
+  if (!subscription || subscription === "free") return 10000; // Free tier
+  if (subscription === "plus" || subscription === "paid") return 100000; // Paid tier
+  if (subscription === "super") return 500000; // Super tier
+  return 10000; // Default to free
+}
+
+// Helper: Get character budget for vault context based on tier
+export function getCharBudget(subscription?: string | null): number {
+  if (!subscription || subscription === "free") return 1500; // Free tier
+  if (subscription === "plus" || subscription === "paid") return 6000; // Paid tier
+  if (subscription === "super") return 12000; // Super tier
+  return 1500; // Default to free
+}
+
+// Helper: Estimate token count from text (rough approximation: 1 token ≈ 4 chars)
+export function estimateTokenCount(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// Helper: Detect natural stop signals in streaming text
+export function detectSemanticStop(text: string, tokenCount: number): boolean {
+  if (!text || text.length < 50) return false; // Too short to determine
+  
+  const trimmed = text.trim();
+  
+  // Check for sentence endings
+  const hasSentenceEnding = /[.!?]\s*$/.test(trimmed);
+  
+  // Check for code fence closures
+  const hasCodeFenceClosure = /```\s*$/.test(trimmed);
+  
+  // Count sentences (rough approximation)
+  const sentenceCount = (trimmed.match(/[.!?]\s+/g) || []).length;
+  
+  // Natural stop if:
+  // 1. Has sentence ending AND has multiple sentences AND token count > 100
+  // 2. OR has code fence closure
+  // 3. OR very long response (>2000 tokens) with sentence ending
+  
+  if (hasCodeFenceClosure) return true;
+  if (tokenCount > 2000 && hasSentenceEnding) return true;
+  if (sentenceCount >= 3 && hasSentenceEnding && tokenCount > 100) return true;
+  
+  return false;
+}
+
 // Execution state reducer with transition validation
 function execReducer(state: ExecStateData, action: ExecAction): ExecStateData {
   // Helper to check if current state allows transition
@@ -155,6 +206,7 @@ function execReducer(state: ExecStateData, action: ExecAction): ExecStateData {
         return state;
       }
       return {
+        ...state,
         state: 'validating',
         requestId: action.requestId,
         error: null,
@@ -189,6 +241,33 @@ function execReducer(state: ExecStateData, action: ExecAction): ExecStateData {
         return state;
       }
       return { ...state, state: 'streaming' };
+    }
+
+    case 'TOKEN_RECEIVED': {
+      const allowedFrom: ExecState[] = ['streaming'];
+      if (!canTransitionFrom(allowedFrom)) {
+        // Silently ignore tokens received in other states
+        return state;
+      }
+      
+      const newTokenCount = state.tokenCount + action.estimatedTokens;
+      const newCharCount = state.charCount + action.token.length;
+      
+      // Check if budget exceeded (use 95% threshold to give some buffer)
+      if (newTokenCount > state.tokenBudget * 0.95) {
+        // Will transition to HIT_LIMIT, but update counts first
+        return {
+          ...state,
+          tokenCount: newTokenCount,
+          charCount: newCharCount,
+        };
+      }
+      
+      return {
+        ...state,
+        tokenCount: newTokenCount,
+        charCount: newCharCount,
+      };
     }
 
     case 'MARK_STALLED': {
@@ -275,6 +354,7 @@ function execReducer(state: ExecStateData, action: ExecAction): ExecStateData {
     case 'RESET': {
       // RESET can happen from any state (emergency escape hatch)
       return {
+        ...state,
         state: 'idle',
         requestId: null,
         error: null,
@@ -292,8 +372,19 @@ function execReducer(state: ExecStateData, action: ExecAction): ExecStateData {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { currentUser } = useAuth();
+  const { currentUser, userSubscription } = useAuth();
   const [state, setState] = useState<ChatState>("idle");
+  
+  // Get budgets based on subscription tier
+  const tokenBudget = useMemo(() => 
+    getTokenBudget(userSubscription?.planId), 
+    [userSubscription?.planId]
+  );
+  const charBudget = useMemo(() => 
+    getCharBudget(userSubscription?.planId), 
+    [userSubscription?.planId]
+  );
+  
   const [execData, dispatchExec] = useReducer(execReducer, {
     state: 'idle',
     requestId: null,
@@ -301,6 +392,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     errorCategory: null,
     tokenCount: 0,
     charCount: 0,
+    tokenBudget,
+    charBudget,
   });
   const [requestId, setRequestId] = useState<string | null>(null);
   const [lastTranscript, setLastTranscript] = useState("");

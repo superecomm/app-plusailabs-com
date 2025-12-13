@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import VIIMAnimation from "./VIIMAnimation";
 import { useVIIMRecorder } from "./VIIMRecorder";
-import { useChat } from "@/contexts/ChatContext";
+import { useChat, estimateTokenCount, detectSemanticStop } from "@/contexts/ChatContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
+import { StallActionsBar } from "@/components/StallActionsBar";
 import type { ChatState } from "@/contexts/ChatContext";
 import { GreetingBubble } from "./GreetingBubble";
 import { llmModels, getModelById } from "@/lib/models/modelRegistry";
@@ -258,6 +259,7 @@ export function NeuralBox({
     setIsActivated,
     showGreeting,
     setShowGreeting,
+    lastPrompt,
     setLastTranscript,
     setLastPrompt,
     conversationHistory,
@@ -483,12 +485,35 @@ export function NeuralBox({
             markTokenActivity();
             // Hide narrative status as soon as tokens start/resume.
             setAssistantStatusText(null);
+            
+            // Dispatch token received action for budget tracking
+            const estimated = estimateTokenCount(token);
+            dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
+            
             setStreamingContent((prev) => {
               const next = prev + token;
+              
+              // Check character limit
               if (next.length > MAX_STREAM_CHARS) {
                 abortController.abort();
+                dispatchExec({ type: 'COMPLETE', reason: 'char_limit' });
                 return prev;
               }
+              
+              // Check token budget (access from execData)
+              if (execData.tokenCount > execData.tokenBudget * 0.95) {
+                abortController.abort();
+                dispatchExec({ type: 'HIT_LIMIT' });
+                return prev;
+              }
+              
+              // Check for semantic stop
+              if (detectSemanticStop(next, execData.tokenCount)) {
+                abortController.abort();
+                dispatchExec({ type: 'COMPLETE', reason: 'semantic_stop' });
+                return prev;
+              }
+              
               return next;
             });
         };
@@ -1258,6 +1283,29 @@ export function NeuralBox({
           )}
         </div>
       </div>
+
+      {/* Stall Actions Bar */}
+      {execState === 'stalled' && (
+        <div className="pointer-events-auto fixed bottom-[100px] left-0 right-0 z-30">
+          <StallActionsBar
+            onRetry={() => {
+              const retryReqId = nanoid();
+              setRequestId(retryReqId);
+              dispatchExec({ type: 'RETRY' });
+              dispatchExec({ type: 'START_STREAMING' });
+              handleLLMRequest(selectedModel, lastPrompt, retryReqId);
+            }}
+            onCancel={() => {
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+              }
+              dispatchExec({ type: 'CANCEL' });
+              setState('idle');
+            }}
+            theme="light"
+          />
+        </div>
+      )}
 
       {showInputPanel && (
         <div
