@@ -515,30 +515,20 @@ export function NeuralBox({
             const delay = calculateTokenDelay(token, streamingContent);
             await new Promise(resolve => setTimeout(resolve, delay));
             
-            setStreamingContent((prev) => {
-              const next = prev + token;
-              
-              // Check limits
-              if (next.length > MAX_STREAM_CHARS) {
-                abortController.abort();
-                dispatchExec({ type: 'COMPLETE', reason: 'char_limit' });
-                return prev;
-              }
-              
-              if (execData.tokenCount > execData.tokenBudget * 0.95) {
-                abortController.abort();
-                dispatchExec({ type: 'HIT_LIMIT' });
-                return prev;
-              }
-              
-              if (detectSemanticStop(next, execData.tokenCount)) {
-                abortController.abort();
-                dispatchExec({ type: 'COMPLETE', reason: 'semantic_stop' });
-                return prev;
-              }
-              
-              return next;
-            });
+            setStreamingContent((prev) => prev + token);
+            
+            // Check limits AFTER state update (not during render)
+            const newLength = streamingContent.length + token.length;
+            if (newLength > MAX_STREAM_CHARS) {
+              abortController.abort();
+              setTimeout(() => dispatchExec({ type: 'COMPLETE', reason: 'char_limit' }), 0);
+            } else if (execData.tokenCount > execData.tokenBudget * 0.95) {
+              abortController.abort();
+              setTimeout(() => dispatchExec({ type: 'HIT_LIMIT' }), 0);
+            } else if (detectSemanticStop(streamingContent + token, execData.tokenCount)) {
+              abortController.abort();
+              setTimeout(() => dispatchExec({ type: 'COMPLETE', reason: 'semantic_stop' }), 0);
+            }
           }
           
           isProcessingTokenRef.current = false;
@@ -651,6 +641,10 @@ export function NeuralBox({
   const processLLM = async (modelId: string, text: string, options?: any): Promise<ModelResponse> => {
     try {
       switch (modelId) {
+        case "all-for-one":
+          // Future feature: parallel multi-model inference
+          // For now, fallback to GPT
+          return await processGPT(text, options);
         case "gpt-5.1":
           return await processGPT(text, options);
         case "gpt-5.1-code":
@@ -758,15 +752,16 @@ export function NeuralBox({
     const trimmedInput = value.trim();
     setLastPrompt(trimmedInput);
     
+    // Clear input immediately
+    if (typeof overrideText !== "string") {
+      setTextInput("");
+    }
+    
     // Save user message with vault refs
     await appendMessageToConversation("user", trimmedInput, { 
       avatarType: "user",
       vaultRefs: vaultRefs.length > 0 ? vaultRefs : undefined,
     });
-    
-    if (typeof overrideText !== "string") {
-      setTextInput("");
-    }
 
     dispatchExec({ type: 'BEGIN_ROUTING' });
     dispatchExec({ type: 'BEGIN_PREFLIGHT' });
@@ -1201,7 +1196,7 @@ export function NeuralBox({
                       className={`${
                         isUser
                           ? "rounded-[5px] bg-gray-800 text-white px-5 py-3"
-                          : "bg-transparent text-gray-900 px-2"
+                          : "text-gray-900"
                       }`}
                     >
                       <div className={`space-y-3 text-[15px] leading-7 ${isUser ? "text-white" : "text-gray-900"}`}>

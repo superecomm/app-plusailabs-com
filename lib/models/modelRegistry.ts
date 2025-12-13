@@ -87,6 +87,16 @@ export const asrModels: Model[] = [
 // LLM Models (Text Generation)
 export const llmModels: Model[] = [
   {
+    id: "all-for-one",
+    name: "All-For-One",
+    type: "llm",
+    description: "Future feature: Use multiple models simultaneously for best results.",
+    provider: "openai",
+    costPerMinute: 0.015,
+    supportsAudio: false,
+    supportsText: true,
+  },
+  {
     id: "gpt-5.1",
     name: "GPT-5.1",
     type: "llm",

@@ -548,6 +548,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [currentUser, currentConversationId]);
 
   const startNewConversation = useCallback(async () => {
+    // Clear history immediately
     setConversationHistory([]);
 
     // If the user is not signed in, reset the current conversation and clear any cached local history
@@ -560,6 +561,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      // Clear current conversation ID first to trigger cleanup
+      const oldConversationId = currentConversationId;
+      setCurrentConversationId(null);
+      
+      // Clear cached messages from old conversation
+      if (oldConversationId && typeof window !== "undefined") {
+        const cacheKey = `chat:messages:${currentUser.uid}:${oldConversationId}`;
+        window.localStorage.removeItem(cacheKey);
+      }
+      
+      // Create new conversation
       const newConversationId = await createConversationDoc(currentUser.uid, selectedModel, "Untitled");
       setCurrentConversationId(newConversationId);
       return newConversationId;
@@ -567,7 +579,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       console.error("Failed to start new conversation", error);
       return null;
     }
-  }, [currentUser, selectedModel]);
+  }, [currentUser, selectedModel, currentConversationId]);
 
   const loadConversation = useCallback((conversationId: string) => {
     setCurrentConversationId(conversationId);
