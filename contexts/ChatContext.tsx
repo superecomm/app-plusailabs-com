@@ -113,7 +113,13 @@ interface ChatContextType {
   appendMessageToConversation: (
     role: "user" | "assistant",
     content: string,
-    options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string; tokenCount?: number }
+    options?: { 
+      avatarType?: "user" | "neural"; 
+      avatarUrl?: string; 
+      model?: string; 
+      tokenCount?: number;
+      vaultRefs?: import("@/types/conversation").VaultRef[];
+    }
   ) => Promise<string | null>;
   pendingQueue: PendingSubmission[];
   enqueueSubmission: (item: PendingSubmission) => void;
@@ -607,7 +613,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     async (
       role: "user" | "assistant",
       content: string,
-      options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string; tokenCount?: number }
+      options?: { 
+        avatarType?: "user" | "neural"; 
+        avatarUrl?: string; 
+        model?: string; 
+        tokenCount?: number;
+        vaultRefs?: import("@/types/conversation").VaultRef[];
+      }
     ) => {
       const optimisticEntry: ConversationMessage = {
         id: nanoid(),
@@ -620,6 +632,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         avatarUrl: options?.avatarUrl,
         model: options?.model ?? (role === "assistant" ? selectedModel : undefined),
         tokenCount: options?.tokenCount,
+        vaultRefs: options?.vaultRefs,
       };
 
       if (!currentUser) {

@@ -2,6 +2,13 @@
 
 export type ConversationMessageType = "text" | "image" | "file" | "system";
 
+export type VaultRef = {
+  id: string;
+  type: "bio" | "folder" | "file";
+  name: string;
+  token: string;
+};
+
 export type ConversationMessage = {
   id: string;
   conversationId: string;
@@ -12,6 +19,7 @@ export type ConversationMessage = {
   avatarType?: "user" | "neural";
   avatarUrl?: string;
   fileRefs?: string[];
+  vaultRefs?: VaultRef[];
   model?: string;
   tokenCount?: number;
 };

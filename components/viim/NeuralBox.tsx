@@ -3,10 +3,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import VIIMAnimation from "./VIIMAnimation";
 import { useVIIMRecorder } from "./VIIMRecorder";
-import { useChat, estimateTokenCount, detectSemanticStop } from "@/contexts/ChatContext";
+import { useChat, estimateTokenCount, detectSemanticStop, getCharBudget } from "@/contexts/ChatContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
 import { StallActionsBar } from "@/components/StallActionsBar";
+import { VaultAutocomplete } from "@/components/vault/VaultAutocomplete";
+import { ContextSourcesBar } from "@/components/vault/ContextSourcesBar";
+import { useVaultAutocomplete } from "@/hooks/useVaultAutocomplete";
+import { resolveVaultContext, buildPromptWithVault } from "@/lib/vaultPolicy";
+import type { VaultRef } from "@/types/conversation";
 import type { ChatState } from "@/contexts/ChatContext";
 import { GreetingBubble } from "./GreetingBubble";
 import { llmModels, getModelById } from "@/lib/models/modelRegistry";
@@ -274,16 +279,29 @@ export function NeuralBox({
     setStatusLabel,
   } = useChat();
 
-  const { currentUser } = useAuth();
+  const { currentUser, userSubscription } = useAuth();
   const router = useRouter();
   const { showNotification } = useNotification();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
 
   const [textInput, setTextInput] = useState("");
+  const [vaultRefs, setVaultRefs] = useState<VaultRef[]>([]);
   const [isProcessingInput, setIsProcessingInput] = useState(false);
   const [hasActivatedOnce, setHasActivatedOnce] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Vault autocomplete hook
+  const autocomplete = useVaultAutocomplete(textareaRef, (token, item) => {
+    // Add vault ref when token is inserted
+    const newRef: VaultRef = {
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      token,
+    };
+    setVaultRefs(prev => [...prev, newRef]);
+  });
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Track which messages existed when the conversation was opened; only animate newly-added assistant messages
@@ -722,16 +740,36 @@ export function NeuralBox({
       setShowGreeting(false);
     }
     const trimmedInput = value.trim();
-    const plusTokens = extractPlusTokens(trimmedInput);
-    const assembledPrompt = buildPrompt(trimmedInput, plusTokens);
     setLastPrompt(trimmedInput);
-    await appendMessageToConversation("user", trimmedInput, { avatarType: "user" });
+    
+    // Save user message with vault refs
+    await appendMessageToConversation("user", trimmedInput, { 
+      avatarType: "user",
+      vaultRefs: vaultRefs.length > 0 ? vaultRefs : undefined,
+    });
+    
     if (typeof overrideText !== "string") {
       setTextInput("");
     }
 
     dispatchExec({ type: 'BEGIN_ROUTING' });
     dispatchExec({ type: 'BEGIN_PREFLIGHT' });
+    
+    // Resolve vault context if refs exist
+    let assembledPrompt = trimmedInput;
+    if (vaultRefs.length > 0 && currentUser) {
+      const budget = getCharBudget(userSubscription?.planId);
+      const vaultContext = await resolveVaultContext(currentUser.uid, vaultRefs, budget);
+      assembledPrompt = buildPromptWithVault(trimmedInput, vaultContext);
+    } else {
+      // Fallback to basic prompt if no vault refs
+      const plusTokens = extractPlusTokens(trimmedInput);
+      assembledPrompt = buildPrompt(trimmedInput, plusTokens);
+    }
+    
+    // Clear vault refs after submission
+    setVaultRefs([]);
+
     await handleLLMRequest(selectedModel, assembledPrompt, reqId);
   };
 
@@ -1230,6 +1268,13 @@ export function NeuralBox({
                         </span>
                       </div>
                     )}
+                    
+                    {/* Vault Context Sources Bar - show for assistant messages with vault refs */}
+                    {isAssistant && entry.vaultRefs && entry.vaultRefs.length > 0 && (
+                      <div className="mt-3 px-2">
+                        <ContextSourcesBar sources={entry.vaultRefs} />
+                      </div>
+                    )}
                   </div>
                   {!isUser && (
                     <div className="flex-shrink-0 ml-3 pt-5">
@@ -1283,6 +1328,17 @@ export function NeuralBox({
           )}
         </div>
       </div>
+
+      {/* Vault Autocomplete */}
+      {autocomplete.isOpen && (
+        <VaultAutocomplete
+          items={autocomplete.items}
+          selectedIndex={autocomplete.selectedIndex}
+          position={autocomplete.position}
+          onSelect={autocomplete.onSelect}
+          onClose={autocomplete.onClose}
+        />
+      )}
 
       {/* Stall Actions Bar */}
       {execState === 'stalled' && (
@@ -1418,7 +1474,11 @@ export function NeuralBox({
                     rows={1}
                     className="w-full resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && voiceGestureState === "idle") {
+                      // Handle autocomplete navigation first
+                      autocomplete.onKeyDown(e);
+                      
+                      // If autocomplete didn't handle it, check for Enter to submit
+                      if (e.key === "Enter" && !e.shiftKey && voiceGestureState === "idle" && !autocomplete.isOpen) {
                         e.preventDefault();
                         handleTextSubmit();
                       }
