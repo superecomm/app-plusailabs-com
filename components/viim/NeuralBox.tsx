@@ -1365,7 +1365,7 @@ export function NeuralBox({
               </div>
             )}
             <div className="flex items-end gap-3">
-              <div className="flex flex-1 flex-col items-stretch gap-3">
+              <div className="flex flex-1 flex-col items-stretch gap-3 pr-2">
                 <div className="relative px-2 sm:px-0 min-h-[1px]">
                   {/* Agent Menu */}
                   <div
