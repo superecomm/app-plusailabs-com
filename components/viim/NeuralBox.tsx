@@ -10,7 +10,7 @@ import { StallActionsBar } from "@/components/StallActionsBar";
 import { VaultAutocomplete } from "@/components/vault/VaultAutocomplete";
 import { ContextSourcesBar } from "@/components/vault/ContextSourcesBar";
 import { useVaultAutocomplete } from "@/hooks/useVaultAutocomplete";
-import { resolveVaultContext, buildPromptWithVault } from "@/lib/vaultPolicy";
+import { resolveVaultContext, buildPromptWithVault } from "@/lib/vaultPolicyClient";
 import type { VaultRef } from "@/types/conversation";
 import type { ChatState } from "@/contexts/ChatContext";
 import { GreetingBubble } from "./GreetingBubble";
