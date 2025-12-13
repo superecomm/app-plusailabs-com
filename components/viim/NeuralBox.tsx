@@ -133,12 +133,12 @@ const AnimatedContent = ({
       if (!isMounted.current) return;
       if (currentIndex >= targetText.length) return;
 
-      const chunk = 1; // slower, smoother
+      const chunk = 1;
       const nextIndex = Math.min(currentIndex + chunk, targetText.length);
       setVisibleText(targetText.slice(0, nextIndex));
       currentIndex = nextIndex;
 
-      const delay = 35 + Math.random() * 40; // slower pacing
+      const delay = 35 + Math.random() * 40;
       typingTimeoutRef.current = window.setTimeout(typeNextChar, delay);
     };
 
@@ -152,6 +152,11 @@ const AnimatedContent = ({
   }, [text, isUser, animate, messageId]);
 
   const content = isUser || !animate ? text : visibleText;
+  
+  // Debug: Log if user message isn't rendering
+  if (isUser && !content) {
+    console.warn('[AnimatedContent] User message has no content:', { text, isUser, messageId });
+  }
 
   return (
     <div className="relative chat-response">
@@ -1294,19 +1299,17 @@ export function NeuralBox({
           )}
 
           {!hasActivatedOnce && (
-            <div className={`${!currentUser ? `fixed inset-0 flex items-center justify-center ${showAuthModal ? "z-0 pointer-events-none" : "z-[9999] pointer-events-none"}` : ""}`}>
+            <div className="flex items-center justify-center pt-20">
               <button
                 type="button"
                 onClick={handleActivate}
-                className={`group flex flex-col items-center gap-4 rounded-[32px] bg-transparent px-6 py-6 text-center transition hover:-translate-y-0.5 pointer-events-auto filter-none backdrop-filter-none ${
-                  !currentUser ? "scale-110 drop-shadow-2xl" : ""
-                }`}
+                className="group flex flex-col items-center gap-4 rounded-[32px] bg-transparent px-6 py-6 text-center transition hover:-translate-y-0.5"
               >
                 <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-[24px] bg-transparent">
                   <VIIMAnimation state="idle" size="sm" container="square" visualStyle="particles" audioStream={null} />
                 </div>
                 <div className="space-y-1 text-gray-800">
-                  <p className={`text-base font-semibold ${!currentUser ? "text-gray-900 text-lg" : ""}`}>Tap to launch +AI</p>
+                  <p className="text-base font-semibold text-gray-900">Tap to launch +AI</p>
                 </div>
               </button>
             </div>
