@@ -342,12 +342,12 @@ export function NeuralBox({
 
 
   useEffect(() => {
-    if (state !== "processing") return;
+    if (execState !== "streaming" && execState !== "validating" && execState !== "routing" && execState !== "preflight") return;
     const id = setInterval(() => {
       setThinkingIndex((prev) => (prev + 1) % thinkingMessages.length);
     }, 1600);
     return () => clearInterval(id);
-  }, [state, thinkingMessages.length]);
+  }, [execState, thinkingMessages.length]);
 
   useEffect(() => {
     // If we are streaming and tokens stall, briefly re-show a soft status.
@@ -1291,8 +1291,8 @@ export function NeuralBox({
                      <div className="flex flex-col gap-3 w-full max-w-4xl">
                         <article className="bg-transparent text-gray-900 px-2">
                              <div className="space-y-3 text-[15px] leading-7 text-gray-900">
-                                {/* Streaming content is already incremental; don't re-type it */}
-                                <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" animate={false} stopSignal={stopPrintSignal} />
+                                {/* Show streaming content without animation since it's already incremental */}
+                                <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" animate={true} stopSignal={stopPrintSignal} />
                              </div>
                         </article>
                      </div>

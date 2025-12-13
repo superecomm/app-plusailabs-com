@@ -436,18 +436,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                   >
                     Explore
                   </button>
-                  <button
-                    type="button"
-                    aria-pressed={viewMode === "cloud"}
-                    onClick={() => setViewMode("cloud")}
-                    className={`pb-1 transition ${
-                      viewMode === "cloud"
-                        ? "text-gray-900 border-b-2 border-gray-900"
-                        : "text-gray-500"
-                    }`}
-                  >
-                    Cloud
-                  </button>
+                  {/* Cloud button removed per user request */}
                 </div>
               </div>
 
@@ -912,27 +901,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                   }`}
                 />
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-700">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode("cloud")}
-                      className={`flex h-5 w-5 items-center justify-center transition ${
-                        theme === "dark" ? "text-gray-200 hover:text-white" : "text-gray-800 hover:text-gray-900"
-                      }`}
-                      aria-label="Open Cloud storage"
-                      disabled={!currentUser}
-                    >
-                      <Cloud className="h-5 w-5" />
-                    </button>
-                    <span className={theme === "dark" ? "text-gray-200" : "text-gray-700"}>Cloud storage</span>
-                    <span className={`${theme === "dark" ? "text-gray-400" : "text-gray-500"} ml-auto`}>{cloudUsagePct}%</span>
-                  </div>
-                  <div className={`${theme === "dark" ? "bg-gray-800" : "bg-gray-100"} h-1.5 rounded-full overflow-hidden`}>
-                    <div
-                      className={`${theme === "dark" ? "bg-gray-300" : "bg-gray-900"} h-full rounded-full transition-all`}
-                      style={{ width: `${cloudUsagePct}%` }}
-                    />
-                  </div>
+                  {/* Cloud storage option removed per user request */}
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center text-[11px] font-semibold">
                     <div className="flex items-center gap-2">
                       <Sun className={theme === "dark" ? "h-4 w-4 text-gray-400" : "h-4 w-4 text-gray-700"} />
