@@ -927,6 +927,13 @@ export function NeuralBox({
   };
 
   const handleModelSelect = (modelId: string) => {
+    // All-For-One is coming soon
+    if (modelId === "all-for-one") {
+      showNotification("info", "🚀 All-For-One: Running multiple models simultaneously. Coming soon!");
+      setIsModelMenuOpen(false);
+      return;
+    }
+    
     setSelectedModel(modelId);
     // Keep chat/text as the default; voice is activated via press-and-hold on the Neural Box.
     setInputMode("text");
