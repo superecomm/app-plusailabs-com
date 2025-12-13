@@ -1365,7 +1365,7 @@ export function NeuralBox({
               </div>
             )}
             <div className="flex items-end gap-3">
-              <div className="flex flex-1 flex-col items-stretch gap-3 pr-2">
+              <div className="flex flex-1 flex-col items-stretch gap-3">
                 <div className="relative px-2 sm:px-0 min-h-[1px]">
                   {/* Agent Menu */}
                   <div
@@ -1452,7 +1452,7 @@ export function NeuralBox({
                   </div>
                 </div>
 
-                <div className="relative z-10 flex flex-col rounded-[5px] border-[3px] border-gray-300 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
+                <div className="relative z-10 flex flex-col rounded-[5px] border-[3px] border-gray-300 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2 ml-3">
                   <textarea
                     ref={textareaRef}
                     value={textInput}
