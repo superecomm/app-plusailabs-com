@@ -17,6 +17,7 @@ import { GreetingBubble } from "./GreetingBubble";
 import { llmModels, getModelById } from "@/lib/models/modelRegistry";
 import type { ModelResponse } from "@/lib/models/modelRegistry";
 import { nanoid } from "nanoid";
+import { calculateTokenDelay, ENTRY_DELAY_MS } from "@/lib/streamingAnimation";
 import {
   Send,
   Camera,
@@ -329,6 +330,8 @@ export function NeuralBox({
   const [assistantStatusText, setAssistantStatusText] = useState<string | null>(null);
   const lastTokenAtRef = useRef<number | null>(null);
   const firstTokenSeenRef = useRef(false);
+  const tokenQueueRef = useRef<string[]>([]);
+  const isProcessingTokenRef = useRef(false);
 
   // Press-and-hold voice gesture (independent of text mode)
   const [voiceGestureState, setVoiceGestureState] = useState<VoiceGestureState>("idle");
@@ -486,6 +489,8 @@ export function NeuralBox({
     setAbortController(abortController);
 
     setStreamingContent("");
+    tokenQueueRef.current = [];
+    isProcessingTokenRef.current = false;
     setState("speaking"); // Use speaking state to indicate streaming
     dispatchExec({ type: 'START_STREAMING' });
     setRequestId(reqId);
@@ -495,37 +500,37 @@ export function NeuralBox({
     setAssistantStatusText(thinkingMessages[thinkingIndex] || "Analyzing…");
 
     try {
-        const onToken = (token: string) => {
-            if (!firstTokenSeenRef.current) {
-              firstTokenSeenRef.current = true;
-            }
-            lastTokenAtRef.current = Date.now();
-            markTokenActivity();
-            // Hide narrative status as soon as tokens start/resume.
-            setAssistantStatusText(null);
+        // Process token queue with controlled pacing
+        const processTokenQueue = async () => {
+          if (isProcessingTokenRef.current) return;
+          if (tokenQueueRef.current.length === 0) return;
+          
+          isProcessingTokenRef.current = true;
+          
+          while (tokenQueueRef.current.length > 0) {
+            const token = tokenQueueRef.current.shift();
+            if (!token) break;
             
-            // Dispatch token received action for budget tracking
-            const estimated = estimateTokenCount(token);
-            dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
+            // Calculate deliberate delay based on content
+            const delay = calculateTokenDelay(token, streamingContent);
+            await new Promise(resolve => setTimeout(resolve, delay));
             
             setStreamingContent((prev) => {
               const next = prev + token;
               
-              // Check character limit
+              // Check limits
               if (next.length > MAX_STREAM_CHARS) {
                 abortController.abort();
                 dispatchExec({ type: 'COMPLETE', reason: 'char_limit' });
                 return prev;
               }
               
-              // Check token budget (access from execData)
               if (execData.tokenCount > execData.tokenBudget * 0.95) {
                 abortController.abort();
                 dispatchExec({ type: 'HIT_LIMIT' });
                 return prev;
               }
               
-              // Check for semantic stop
               if (detectSemanticStop(next, execData.tokenCount)) {
                 abortController.abort();
                 dispatchExec({ type: 'COMPLETE', reason: 'semantic_stop' });
@@ -534,6 +539,28 @@ export function NeuralBox({
               
               return next;
             });
+          }
+          
+          isProcessingTokenRef.current = false;
+        };
+        
+        const onToken = (token: string) => {
+            if (!firstTokenSeenRef.current) {
+              firstTokenSeenRef.current = true;
+              // Entry delay - brief pause before first token
+              setTimeout(() => setAssistantStatusText(null), ENTRY_DELAY_MS);
+            }
+            
+            lastTokenAtRef.current = Date.now();
+            markTokenActivity();
+            
+            // Dispatch token received action for budget tracking
+            const estimated = estimateTokenCount(token);
+            dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
+            
+            // Add to queue for controlled display
+            tokenQueueRef.current.push(token);
+            processTokenQueue();
         };
         
         const options = {
