@@ -1165,13 +1165,8 @@ export function NeuralBox({
                   key={entry.id}
                   className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser ? "bg-gray-50/60" : ""} py-5 px-3`}
                 >
-                  {isUser && (
-                    <div className="flex-shrink-0 mr-3 pt-5">
-                        {renderAvatar(entry.sender as any, entry.avatarUrl)}
-                    </div>
-                  )}
                   <div
-                    className={`flex flex-col gap-3 ${
+                    className={`flex ${isUser ? "flex-row" : "flex-col"} gap-3 ${
                       isUser ? "max-w-[85%] sm:max-w-[70%]" : "w-full max-w-4xl"
                     }`}
                   >
@@ -1271,6 +1266,11 @@ export function NeuralBox({
                     )}
                   </div>
                   {!isUser && (
+                    <div className="flex-shrink-0 ml-3 pt-5">
+                        {renderAvatar(entry.sender as any, entry.avatarUrl)}
+                    </div>
+                  )}
+                  {isUser && (
                     <div className="flex-shrink-0 ml-3 pt-5">
                         {renderAvatar(entry.sender as any, entry.avatarUrl)}
                     </div>
