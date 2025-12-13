@@ -1165,6 +1165,11 @@ export function NeuralBox({
                   key={entry.id}
                   className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser ? "bg-gray-50/60" : ""} py-5 px-3`}
                 >
+                  {isUser && (
+                    <div className="flex-shrink-0 mr-3 pt-5">
+                        {renderAvatar(entry.sender as any, entry.avatarUrl)}
+                    </div>
+                  )}
                   <div
                     className={`flex flex-col gap-3 ${
                       isUser ? "max-w-[85%] sm:max-w-[70%]" : "w-full max-w-4xl"
@@ -1274,14 +1279,16 @@ export function NeuralBox({
               );
             })}
 
-            {/* Streaming Bubble */}
+            {/* Streaming Bubble - live incremental streaming */}
             {streamingContent && (
                  <div className="flex w-full justify-start bg-gray-50/60 py-5 px-3">
                      <div className="flex flex-col gap-3 w-full max-w-4xl">
                         <article className="bg-transparent text-gray-900 px-2">
                              <div className="space-y-3 text-[15px] leading-7 text-gray-900">
-                                {/* Show streaming content without animation since it's already incremental */}
-                                <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" animate={true} stopSignal={stopPrintSignal} />
+                                {/* Streaming is already incremental - show directly without typewriter */}
+                                <div className="whitespace-pre-wrap text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] text-gray-900">
+                                  {streamingContent}
+                                </div>
                              </div>
                         </article>
                      </div>
