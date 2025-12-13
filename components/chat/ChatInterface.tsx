@@ -927,7 +927,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                       style={{ width: `${cloudUsagePct}%` }}
                     />
                   </div>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center text-[11px] font-semibold">
+                  <div className="flex flex-row items-center gap-3 text-[11px] font-semibold">
                     <div className="flex items-center gap-2">
                       <Sun className={theme === "dark" ? "h-4 w-4 text-gray-400" : "h-4 w-4 text-gray-700"} />
                       <div className="relative flex items-center w-24 h-4">
