@@ -380,9 +380,10 @@ export function NeuralBox({
         </div>
       );
     }
+    // Assistant avatar - free like Siri, no container
     return (
-      <div className="flex h-6 w-6 items-center justify-center flex-shrink-0">
-        <VIIMAnimation state={state} size="custom" customSize={24} container="none" />
+      <div className="flex items-center justify-center">
+        <VIIMAnimation state="idle" size="custom" customSize={24} container="none" visualStyle="particles" audioStream={null} />
       </div>
     );
   };
@@ -500,45 +501,11 @@ export function NeuralBox({
     setAssistantStatusText(thinkingMessages[thinkingIndex] || "Analyzing…");
 
     try {
-        // Process token queue with controlled pacing
-        const processTokenQueue = async () => {
-          if (isProcessingTokenRef.current) return;
-          if (tokenQueueRef.current.length === 0) return;
-          
-          isProcessingTokenRef.current = true;
-          
-          while (tokenQueueRef.current.length > 0) {
-            const token = tokenQueueRef.current.shift();
-            if (!token) break;
-            
-            // Calculate deliberate delay based on content
-            const delay = calculateTokenDelay(token, streamingContent);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            
-            setStreamingContent((prev) => prev + token);
-            
-            // Check limits AFTER state update (not during render)
-            const newLength = streamingContent.length + token.length;
-            if (newLength > MAX_STREAM_CHARS) {
-              abortController.abort();
-              setTimeout(() => dispatchExec({ type: 'COMPLETE', reason: 'char_limit' }), 0);
-            } else if (execData.tokenCount > execData.tokenBudget * 0.95) {
-              abortController.abort();
-              setTimeout(() => dispatchExec({ type: 'HIT_LIMIT' }), 0);
-            } else if (detectSemanticStop(streamingContent + token, execData.tokenCount)) {
-              abortController.abort();
-              setTimeout(() => dispatchExec({ type: 'COMPLETE', reason: 'semantic_stop' }), 0);
-            }
-          }
-          
-          isProcessingTokenRef.current = false;
-        };
-        
         const onToken = (token: string) => {
             if (!firstTokenSeenRef.current) {
               firstTokenSeenRef.current = true;
-              // Entry delay - brief pause before first token
-              setTimeout(() => setAssistantStatusText(null), ENTRY_DELAY_MS);
+              // Hide narrative status immediately on first token
+              setAssistantStatusText(null);
             }
             
             lastTokenAtRef.current = Date.now();
@@ -548,9 +515,8 @@ export function NeuralBox({
             const estimated = estimateTokenCount(token);
             dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
             
-            // Add to queue for controlled display
-            tokenQueueRef.current.push(token);
-            processTokenQueue();
+            // Update streaming content immediately - smooth, no chunking
+            setStreamingContent((prev) => prev + token);
         };
         
         const options = {
@@ -1310,9 +1276,8 @@ export function NeuralBox({
                         </article>
                      </div>
                      <div className="flex-shrink-0 ml-3 pt-5">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-gray-900 to-gray-600 text-white flex-shrink-0">
-                            <VIIMAnimation state={state} size="custom" customSize={24} container="none" />
-                        </div>
+                        {/* Assistant avatar - free like Siri, no container */}
+                        <VIIMAnimation state={state} size="custom" customSize={24} container="none" visualStyle="particles" audioStream={null} />
                      </div>
                  </div>
             )}
