@@ -459,7 +459,8 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                 openAuthOnMount={!currentUser && autoAuth}
               />
             )}
-            {viewMode === "cloud" && (
+            {/* Cloud view removed per user request */}
+            {viewMode === "cloud" && false && (
               <div
                 className={`flex-1 min-h-0 flex flex-col gap-3 p-3 sm:p-4 ${
                   theme === "dark" ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"

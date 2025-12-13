@@ -657,21 +657,10 @@ export function NeuralBox({
     setHasActivatedOnce(true);
     setShowGreeting(true);
     
-    setTimeout(async () => {
-      if (inputMode === "voice") {
-        try {
-          await startRecording();
-          setTimeout(() => {
-            if (isRecording) {
-              setState("recording");
-            }
-          }, 100);
-        } catch (error) {
-          console.error("Failed to start recording:", error);
-        }
-      } else if (inputMode === "text") {
-        textareaRef.current?.focus();
-      }
+    // Only focus textarea, never auto-start recording
+    // Voice recording should be explicitly triggered by user
+    setTimeout(() => {
+      textareaRef.current?.focus();
     }, 600);
   };
 
