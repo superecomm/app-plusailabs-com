@@ -459,8 +459,8 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                 openAuthOnMount={!currentUser && autoAuth}
               />
             )}
-            {/* Cloud view removed per user request */}
-            {viewMode === "cloud" && false && (
+            {/* Cloud view - accessible from sidebar only */}
+            {viewMode === "cloud" && (
               <div
                 className={`flex-1 min-h-0 flex flex-col gap-3 p-3 sm:p-4 ${
                   theme === "dark" ? "bg-gray-900 text-gray-50" : "bg-gray-50 text-gray-900"
@@ -902,7 +902,31 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                   }`}
                 />
                 <div className="flex flex-col gap-2">
-                  {/* Cloud storage option removed per user request */}
+                  {/* Cloud storage option - sidebar only */}
+                  <div className="flex items-center gap-2 text-[11px] font-semibold text-gray-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewMode("cloud");
+                        setIsHistoryOpen(false);
+                      }}
+                      className={`flex h-5 w-5 items-center justify-center transition ${
+                        theme === "dark" ? "text-gray-200 hover:text-white" : "text-gray-800 hover:text-gray-900"
+                      }`}
+                      aria-label="Open Cloud storage"
+                      disabled={!currentUser}
+                    >
+                      <Cloud className="h-5 w-5" />
+                    </button>
+                    <span className={theme === "dark" ? "text-gray-200" : "text-gray-700"}>Cloud storage</span>
+                    <span className={`${theme === "dark" ? "text-gray-400" : "text-gray-500"} ml-auto`}>{cloudUsagePct}%</span>
+                  </div>
+                  <div className={`${theme === "dark" ? "bg-gray-800" : "bg-gray-100"} h-1.5 rounded-full overflow-hidden`}>
+                    <div
+                      className={`${theme === "dark" ? "bg-gray-300" : "bg-gray-900"} h-full rounded-full transition-all`}
+                      style={{ width: `${cloudUsagePct}%` }}
+                    />
+                  </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center text-[11px] font-semibold">
                     <div className="flex items-center gap-2">
                       <Sun className={theme === "dark" ? "h-4 w-4 text-gray-400" : "h-4 w-4 text-gray-700"} />
