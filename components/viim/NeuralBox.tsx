@@ -8,20 +8,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
 import type { ChatState } from "@/contexts/ChatContext";
 import { GreetingBubble } from "./GreetingBubble";
-import { ActiveIndicator } from "./ActiveIndicator";
 import { llmModels, getModelById } from "@/lib/models/modelRegistry";
 import type { ModelResponse } from "@/lib/models/modelRegistry";
+import { nanoid } from "nanoid";
 import {
   Send,
-  Plus,
   Camera,
   Image,
-  Globe,
-  BookOpen,
-  PenSquare,
-  ShoppingBag,
-  Paperclip,
-  Bot,
   Clipboard,
   ThumbsUp,
   ThumbsDown,
@@ -42,11 +35,19 @@ import {
   LLMErrorCategory
 } from "@/lib/models/llmModels";
 import { processElevenLabs, processSuno, processHume, processRunway } from "@/lib/models/audioModels";
-import { MobileKeyboardMock } from "@/components/mobile/MobileKeyboardMock";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useNotification } from "@/contexts/NotificationContext";
+
+const ASSISTANT_COLLAPSE_CHAR_THRESHOLD = 1200;
+const ASSISTANT_COLLAPSE_HEIGHT_THRESHOLD_PX = 280;
+const ASSISTANT_COLLAPSE_HEAD_LINES = 3;
+const VOICE_HOLD_DELAY_MS = 200;
+const VOICE_CANCEL_THRESHOLD_PX = 70;
+const MAX_STREAM_CHARS = 8000; // soft stop
+
+type VoiceGestureState = "idle" | "holding" | "recording" | "locked" | "canceling" | "sending";
 
 interface NeuralBoxProps {
   audioDeviceId?: string;
@@ -68,24 +69,45 @@ const AnimatedContent = ({
   text,
   isUser,
   messageId,
+  animate = true,
+  stopSignal = 0,
 }: {
   text: string;
   isUser: boolean;
   messageId: string;
+  animate?: boolean;
+  stopSignal?: number;
 }) => {
   const [visibleText, setVisibleText] = useState("");
   const isMounted = useRef(false);
+  const typingTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     isMounted.current = true;
     return () => {
       isMounted.current = false;
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
     };
   }, []);
 
+  // Allow the UI to "stop printing" and reveal the full text immediately
   useEffect(() => {
-    if (isUser) {
-      setVisibleText(text);
+    if (isUser) return;
+    if (!animate) return;
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    setVisibleText(text || "");
+  }, [stopSignal]);
+
+  useEffect(() => {
+    // If this is user content or animation is disabled, show full text immediately
+    if (isUser || !animate) {
+      setVisibleText(text || "");
       return;
     }
 
@@ -94,42 +116,35 @@ const AnimatedContent = ({
       return;
     }
 
-    // If text is already fully visible, do nothing
-    if (visibleText === text) return;
+    // Fresh animation for new assistant output
+    setVisibleText("");
 
-    // If this is a new message (text shorter than visible or completely different), reset
-    if (!visibleText || !text.startsWith(visibleText)) {
-      setVisibleText("");
-    }
-
-    let currentIndex = visibleText.length;
+    let currentIndex = 0;
     const targetText = text;
 
-    // Slower typing speed: 20ms per character
     const typeNextChar = () => {
       if (!isMounted.current) return;
-      
-      if (currentIndex < targetText.length) {
-        // Type 1-2 characters at a time for natural feel
-        const chunk = Math.random() > 0.5 ? 2 : 1;
-        const nextIndex = Math.min(currentIndex + chunk, targetText.length);
-        
-        setVisibleText(targetText.slice(0, nextIndex));
-        currentIndex = nextIndex;
-        
-        // Random delay between 15-30ms for natural typing feel
-        const delay = 15 + Math.random() * 15;
-        setTimeout(typeNextChar, delay);
-      }
+      if (currentIndex >= targetText.length) return;
+
+      const chunk = 1; // slower, smoother
+      const nextIndex = Math.min(currentIndex + chunk, targetText.length);
+      setVisibleText(targetText.slice(0, nextIndex));
+      currentIndex = nextIndex;
+
+      const delay = 35 + Math.random() * 40; // slower pacing
+      typingTimeoutRef.current = window.setTimeout(typeNextChar, delay);
     };
 
-    const timeoutId = setTimeout(typeNextChar, 10);
-    return () => clearTimeout(timeoutId);
-  }, [text, isUser]);
+    typingTimeoutRef.current = window.setTimeout(typeNextChar, 20);
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    };
+  }, [text, isUser, animate, messageId]);
 
-  // Use visibleText for assistant messages to show typing effect,
-  // but fall back to full text if it's the user or if we're hydrating/server-side
-  const content = isUser ? text : (visibleText || (typeof window === 'undefined' ? text : ""));
+  const content = isUser || !animate ? text : visibleText;
 
   return (
     <div className="relative chat-response">
@@ -182,6 +197,32 @@ const AnimatedContent = ({
   );
 };
 
+function buildCollapsedPreview(text: string) {
+  const normalized = (text ?? "").replace(/\r\n/g, "\n").trimEnd();
+  const lines = normalized.split("\n");
+  const head = lines.slice(0, ASSISTANT_COLLAPSE_HEAD_LINES).join("\n").trimEnd();
+  const tail = [...lines].reverse().find((l) => l.trim().length > 0) ?? "";
+  const headHasTail = head.includes(tail) || tail.trim().length === 0;
+  return { head, tail, headHasTail };
+}
+
+function extractPlusTokens(text: string): string[] {
+  const matches = [...text.matchAll(/(?:^|\s)\+([A-Za-z0-9_-]+)/g)];
+  return matches.map((m) => m[1]);
+}
+
+function buildPrompt(userText: string, plusTokens: string[]): string {
+  const blocks: string[] = [];
+  blocks.push("System: You are a helpful, concise assistant. Keep answers safe and clear.");
+  blocks.push("Safety: Avoid harmful, private, or disallowed content.");
+  if (plusTokens.length) {
+    blocks.push(`User Context (from +): ${plusTokens.join(", ")}`);
+  }
+  blocks.push("Task:");
+  blocks.push(userText.trim());
+  return blocks.join("\n\n");
+}
+
 export function NeuralBox({
   audioDeviceId,
   onTranscript,
@@ -200,6 +241,13 @@ export function NeuralBox({
   const {
     state,
     setState,
+    execState,
+    execData,
+    dispatchExec,
+    requestId,
+    setRequestId,
+    canSubmit,
+    markTokenActivity,
     selectedModel,
     setSelectedModel,
     inputMode,
@@ -214,6 +262,14 @@ export function NeuralBox({
     setLastPrompt,
     conversationHistory,
     appendMessageToConversation,
+    currentConversationId,
+    pendingQueue,
+    enqueueSubmission,
+    shiftSubmission,
+    abortController,
+    setAbortController,
+    statusLabel,
+    setStatusLabel,
   } = useChat();
 
   const { currentUser } = useAuth();
@@ -228,9 +284,14 @@ export function NeuralBox({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Track which messages existed when the conversation was opened; only animate newly-added assistant messages
+  const [historyHydrated, setHistoryHydrated] = useState(false);
+  const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const [stopPrintSignal, setStopPrintSignal] = useState(0);
+  const [collapsedById, setCollapsedById] = useState<Record<string, boolean>>({});
+  const [tallById, setTallById] = useState<Record<string, boolean>>({});
+  const manualOverrideIdsRef = useRef<Set<string>>(new Set());
   const [userHasScrolled, setUserHasScrolled] = useState(false);
-  const [isKeyboardMockVisible, setIsKeyboardMockVisible] = useState(showKeyboardMock);
-  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [usageWarning, setUsageWarning] = useState<string | null>(null);
   const [modelQuery, setModelQuery] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
@@ -245,6 +306,19 @@ export function NeuralBox({
   // Streaming State
   const [streamingContent, setStreamingContent] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [assistantStatusText, setAssistantStatusText] = useState<string | null>(null);
+  const lastTokenAtRef = useRef<number | null>(null);
+  const firstTokenSeenRef = useRef(false);
+
+  // Press-and-hold voice gesture (independent of text mode)
+  const [voiceGestureState, setVoiceGestureState] = useState<VoiceGestureState>("idle");
+  const [recordStartAt, setRecordStartAt] = useState<number | null>(null);
+  const [recordElapsedMs, setRecordElapsedMs] = useState(0);
+  const pressTimerRef = useRef<number | null>(null);
+  const pressPointerIdRef = useRef<number | null>(null);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const discardNextAudioRef = useRef(false);
+  const pressBecameRecordingRef = useRef(false);
 
 
   useEffect(() => {
@@ -254,6 +328,23 @@ export function NeuralBox({
     }, 1600);
     return () => clearInterval(id);
   }, [state, thinkingMessages.length]);
+
+  useEffect(() => {
+    // If we are streaming and tokens stall, briefly re-show a soft status.
+    if (state !== "speaking") return;
+    const id = window.setInterval(() => {
+      if (state !== "speaking") return;
+      if (!firstTokenSeenRef.current) return;
+      const last = lastTokenAtRef.current;
+      if (!last) return;
+      const stalled = Date.now() - last > 2000;
+      if (stalled && !assistantStatusText) {
+        setAssistantStatusText("Still working…");
+        dispatchExec({ type: 'MARK_STALLED' });
+      }
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [state, assistantStatusText]);
 
   const renderAvatar = (sender: "user" | "assistant", avatarUrl?: string) => {
     if (avatarUrl) {
@@ -296,8 +387,23 @@ export function NeuralBox({
       }
     },
     onAudioData: async (audioBlob) => {
+      if (discardNextAudioRef.current) {
+        discardNextAudioRef.current = false;
+        pressBecameRecordingRef.current = false;
+        setVoiceGestureState("idle");
+        setRecordStartAt(null);
+        setRecordElapsedMs(0);
+        setIsListening(false);
+        setState("idle");
+        return;
+      }
+
       setIsListening(false);
       setState("processing");
+      pressBecameRecordingRef.current = false;
+      setRecordStartAt(null);
+      setRecordElapsedMs(0);
+      setVoiceGestureState("sending");
 
       if (onAudioCapture) {
         try {
@@ -309,6 +415,7 @@ export function NeuralBox({
 
       if (variant === "capture") {
         setState("idle");
+        setVoiceGestureState("idle");
         return;
       }
       
@@ -322,26 +429,33 @@ export function NeuralBox({
           if (trimmedTranscript) {
             await appendMessageToConversation("user", trimmedTranscript, { avatarType: "user" });
           }
-          
-          await handleLLMRequest(selectedModel, transcription.text);
+          const voiceReqId = nanoid();
+          setRequestId(voiceReqId);
+          dispatchExec({ type: 'START_VALIDATION', requestId: voiceReqId });
+          dispatchExec({ type: 'BEGIN_ROUTING' });
+          dispatchExec({ type: 'BEGIN_PREFLIGHT' });
+          await handleLLMRequest(selectedModel, transcription.text, voiceReqId);
 
         } else {
           setState("idle");
+          setVoiceGestureState("idle");
         }
       } catch (error) {
         console.error("Error processing audio:", error);
         setState("idle");
+        setVoiceGestureState("idle");
       }
     },
     onError: (error) => {
       console.error("Recording error:", error);
       setState("idle");
       setIsListening(false);
+      setVoiceGestureState("idle");
     },
   });
 
   // Unified LLM Request Handler with Streaming
-  const handleLLMRequest = async (modelId: string, text: string) => {
+  const handleLLMRequest = async (modelId: string, text: string, reqId: string) => {
     if (limitReached) return;
 
     if (abortControllerRef.current) {
@@ -349,13 +463,34 @@ export function NeuralBox({
     }
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    setAbortController(abortController);
 
     setStreamingContent("");
     setState("speaking"); // Use speaking state to indicate streaming
+    dispatchExec({ type: 'START_STREAMING' });
+    setRequestId(reqId);
+    markTokenActivity();
+    firstTokenSeenRef.current = false;
+    lastTokenAtRef.current = Date.now();
+    setAssistantStatusText(thinkingMessages[thinkingIndex] || "Analyzing…");
 
     try {
         const onToken = (token: string) => {
-            setStreamingContent((prev) => prev + token);
+            if (!firstTokenSeenRef.current) {
+              firstTokenSeenRef.current = true;
+            }
+            lastTokenAtRef.current = Date.now();
+            markTokenActivity();
+            // Hide narrative status as soon as tokens start/resume.
+            setAssistantStatusText(null);
+            setStreamingContent((prev) => {
+              const next = prev + token;
+              if (next.length > MAX_STREAM_CHARS) {
+                abortController.abort();
+                return prev;
+              }
+              return next;
+            });
         };
         
         const options = {
@@ -377,21 +512,30 @@ export function NeuralBox({
                 // Unified Error Handling using Notification System
                 const errorMsg = getRandomErrorMsg(response.errorCategory);
                 showNotification("error", errorMsg, [
-                    { label: "Try again", onClick: () => handleLLMRequest(modelId, text) },
+                    { label: "Try again", onClick: () => {
+                        const retryReqId = nanoid();
+                        setRequestId(retryReqId);
+                        dispatchExec({ type: 'RETRY' });
+                        dispatchExec({ type: 'START_STREAMING' });
+                        handleLLMRequest(modelId, text, retryReqId);
+                    }},
                     { label: "Switch model", onClick: () => setIsModelMenuOpen(true) }
                 ]);
                 setState("idle");
+                dispatchExec({ type: 'FAIL', error: errorMsg, category: response.errorCategory });
             } else if (response.error.includes("limit_reached") || response.error.includes("limit reached") || response.error.includes("FREE_TRIAL_EXHAUSTED")) {
                  setLimitReached(true);
-                 setUsageWarning("You’ve reached the free trial limit for +AI.");
-                 showNotification("limit", "You’ve reached your free +AI limit", [
+                 setUsageWarning("You've reached the free trial limit for +AI.");
+                 showNotification("limit", "You've reached your free +AI limit", [
                      { label: "Upgrade", onClick: () => router.push("/pricing") }
                  ]);
                  setState("idle");
+                 dispatchExec({ type: 'HIT_LIMIT' });
             } else {
                  // Fallback for unknown errors
                  setUsageWarning(response.error);
                  setState("idle");
+                 dispatchExec({ type: 'FAIL', error: response.error });
             }
         } else if (response.text) {
              setUsageWarning(null);
@@ -403,8 +547,18 @@ export function NeuralBox({
         }
     } catch (error) {
         console.error("LLM Error:", error);
+        dispatchExec({ type: 'FAIL', error: String(error) });
     } finally {
         setStreamingContent("");
+        setAssistantStatusText(null);
+        firstTokenSeenRef.current = false;
+        lastTokenAtRef.current = null;
+        setRequestId(null);
+        if (limitReached) {
+            dispatchExec({ type: 'HIT_LIMIT' });
+        } else {
+            dispatchExec({ type: 'COMPLETE' });
+        }
         if (!limitReached) {
             setState("idle");
         }
@@ -494,6 +648,13 @@ export function NeuralBox({
     }
   }, [openAuthOnMount, currentUser]);
 
+  useEffect(() => {
+    // Ensure chat/text remains the default; voice is activated via press-and-hold gesture.
+    if (inputMode !== "text") {
+      setInputMode("text");
+    }
+  }, [inputMode, setInputMode]);
+
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
     performActivation();
@@ -505,9 +666,18 @@ export function NeuralBox({
     }
   }, [isRecording, state]);
 
-  const handleTextSubmit = async (e?: React.FormEvent) => {
+  const handleTextSubmit = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
-    if (!textInput.trim() || isProcessingInput) return;
+    const value = typeof overrideText === "string" ? overrideText : textInput;
+    if (!value.trim() || isProcessingInput) return;
+    if (!canSubmit) {
+      enqueueSubmission({ text: value });
+      if (typeof overrideText !== "string") {
+        setTextInput("");
+      }
+      return;
+    }
+    if (voiceGestureState !== "idle") return;
 
     if (!currentUser) {
       setShowAuthModal(true);
@@ -517,18 +687,27 @@ export function NeuralBox({
     if (limitReached) return;
 
     setIsProcessingInput(true);
+    const reqId = nanoid();
+    setRequestId(reqId);
+    dispatchExec({ type: 'START_VALIDATION', requestId: reqId });
     setState("processing");
     if (!hasActivatedOnce) {
       setHasActivatedOnce(true);
       setIsActivated(true);
       setShowGreeting(false);
     }
-    const trimmedInput = textInput.trim();
+    const trimmedInput = value.trim();
+    const plusTokens = extractPlusTokens(trimmedInput);
+    const assembledPrompt = buildPrompt(trimmedInput, plusTokens);
     setLastPrompt(trimmedInput);
     await appendMessageToConversation("user", trimmedInput, { avatarType: "user" });
-    setTextInput("");
+    if (typeof overrideText !== "string") {
+      setTextInput("");
+    }
 
-    await handleLLMRequest(selectedModel, trimmedInput);
+    dispatchExec({ type: 'BEGIN_ROUTING' });
+    dispatchExec({ type: 'BEGIN_PREFLIGHT' });
+    await handleLLMRequest(selectedModel, assembledPrompt, reqId);
   };
 
   const handleStop = () => {
@@ -536,6 +715,135 @@ export function NeuralBox({
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
     }
+    // Also stop any "typing" animation and reveal full text immediately.
+    setStopPrintSignal((v) => v + 1);
+  };
+
+  const cancelVoiceGesture = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    pressPointerIdRef.current = null;
+    pressStartRef.current = null;
+
+    if (pressBecameRecordingRef.current || isRecording) {
+      discardNextAudioRef.current = true;
+      stopRecording();
+    }
+
+    pressBecameRecordingRef.current = false;
+    setVoiceGestureState("idle");
+    setRecordStartAt(null);
+    setRecordElapsedMs(0);
+  };
+
+  const stopAndSendVoice = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    pressPointerIdRef.current = null;
+    pressStartRef.current = null;
+
+    if (pressBecameRecordingRef.current || isRecording) {
+      stopRecording();
+    } else {
+      setVoiceGestureState("idle");
+    }
+  };
+
+  const handleNeuralBoxPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    // If user has typed text, treat button as a normal "Send" tap (avoid voice gesture).
+    if (textInput.trim()) {
+      return;
+    }
+
+    // Don't start voice gesture while processing/streaming; button acts as Stop there.
+    if (state === "processing" || state === "speaking") return;
+    if (voiceGestureState === "locked") return;
+
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+    if (limitReached) {
+      router.push("/pricing");
+      return;
+    }
+
+    pressPointerIdRef.current = e.pointerId;
+    pressStartRef.current = { x: e.clientX, y: e.clientY };
+    pressBecameRecordingRef.current = false;
+    setVoiceGestureState("holding");
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = window.setTimeout(async () => {
+      try {
+        // If we left holding state, we were cancelled.
+        if (voiceGestureState !== "holding") return;
+        await startRecording();
+        pressBecameRecordingRef.current = true;
+        setRecordStartAt(Date.now());
+        setVoiceGestureState("recording");
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+          // @ts-ignore best-effort haptic
+          navigator.vibrate?.(10);
+        }
+      } catch {
+        setVoiceGestureState("idle");
+      }
+    }, VOICE_HOLD_DELAY_MS);
+  };
+
+  const handleNeuralBoxPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (pressPointerIdRef.current !== e.pointerId) return;
+    if (voiceGestureState !== "holding" && voiceGestureState !== "recording") return;
+    const start = pressStartRef.current;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    if (dx <= -VOICE_CANCEL_THRESHOLD_PX) {
+      setVoiceGestureState("canceling");
+      cancelVoiceGesture();
+    }
+  };
+
+  const handleNeuralBoxPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (pressPointerIdRef.current !== e.pointerId) return;
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+
+    // If we never started recording, just reset.
+    if (!pressBecameRecordingRef.current && !isRecording) {
+      pressPointerIdRef.current = null;
+      pressStartRef.current = null;
+      setVoiceGestureState("idle");
+      return;
+    }
+
+    // If locked, do nothing on release (hands-free continues).
+    if (voiceGestureState === "locked") {
+      pressPointerIdRef.current = null;
+      pressStartRef.current = null;
+      return;
+    }
+
+    // Otherwise, stop and send.
+    setVoiceGestureState("sending");
+    stopAndSendVoice();
+  };
+
+  const handleNeuralBoxPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (pressPointerIdRef.current !== e.pointerId) return;
+    cancelVoiceGesture();
   };
 
   const handlePrimaryButtonClick = async () => {
@@ -549,38 +857,39 @@ export function NeuralBox({
         return;
     }
 
+    if (voiceGestureState === "sending" || voiceGestureState === "canceling") {
+      return;
+    }
+
+    // Tap while recording locks; tap while locked stops.
+    if (voiceGestureState === "recording") {
+      setVoiceGestureState("locked");
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        // @ts-ignore best-effort haptic
+        navigator.vibrate?.(10);
+      }
+      return;
+    }
+    if (voiceGestureState === "locked") {
+      setVoiceGestureState("sending");
+      stopAndSendVoice();
+      return;
+    }
+
     if (state === "processing" || state === "speaking") {
         handleStop();
         return;
     }
 
-    if (inputMode === "voice") {
-      if (state === "recording") {
-        stopRecording();
-      } else {
-        try {
-          await startRecording();
-          setTimeout(() => {
-            setState("recording");
-          }, 120);
-        } catch (error) {
-          console.error("Failed to start recording:", error);
-        }
-      }
-    } else {
-      if (!textInput.trim() || isProcessingInput) return;
-      handleTextSubmit();
-    }
+    if (!textInput.trim() || isProcessingInput) return;
+    if (!canSubmit) return;
+    handleTextSubmit(undefined, textInput);
   };
 
   const handleModelSelect = (modelId: string) => {
     setSelectedModel(modelId);
-    const model = llmModels.find((m) => m.id === modelId);
-    if (model?.supportsText && !model.supportsAudio) {
-      setInputMode("text");
-    } else if (model?.supportsAudio && !model.supportsText) {
-      setInputMode("voice");
-    }
+    // Keep chat/text as the default; voice is activated via press-and-hold on the Neural Box.
+    setInputMode("text");
     setIsModelMenuOpen(false);
   };
 
@@ -597,9 +906,7 @@ export function NeuralBox({
     onStateChange?.(state);
   }, [state, onStateChange]);
 
-  useEffect(() => {
-    setIsKeyboardMockVisible(showKeyboardMock || isPlusMenuOpen);
-  }, [showKeyboardMock, isPlusMenuOpen]);
+  // showKeyboardMock is currently unused; the previous tools menu + keyboard mock overlay was removed.
 
   useEffect(() => {
     if (conversationHistory.length > 0 && !hasActivatedOnce) {
@@ -610,6 +917,81 @@ export function NeuralBox({
       setShowGreeting(false);
     }
   }, [conversationHistory, hasActivatedOnce, isActivated, setIsActivated, setShowGreeting]);
+
+  useEffect(() => {
+    if (!canSubmit) return;
+    if (isProcessingInput) return;
+    const next = pendingQueue[0];
+    if (!next) return;
+    shiftSubmission();
+    handleTextSubmit(undefined, next.text);
+  }, [canSubmit, isProcessingInput, pendingQueue]);
+
+  useEffect(() => {
+    // Switching conversations: reset "seen" tracking so history doesn't animate
+    seenMessageIdsRef.current = new Set();
+    setHistoryHydrated(false);
+    manualOverrideIdsRef.current = new Set();
+    setCollapsedById({});
+    setTallById({});
+  }, [currentConversationId]);
+
+  useEffect(() => {
+    // First time we receive history after opening a conversation, mark everything as seen.
+    if (!historyHydrated) {
+      for (const msg of conversationHistory) {
+        if (msg?.id) seenMessageIdsRef.current.add(msg.id);
+      }
+      setHistoryHydrated(true);
+      return;
+    }
+
+    // After hydration, keep set updated so only truly new IDs animate.
+    for (const msg of conversationHistory) {
+      if (msg?.id) seenMessageIdsRef.current.add(msg.id);
+    }
+  }, [conversationHistory, historyHydrated]);
+
+  const latestAssistantId = useMemo(() => {
+    for (let i = conversationHistory.length - 1; i >= 0; i--) {
+      const m = conversationHistory[i];
+      if (m?.sender === "assistant") return m.id;
+    }
+    return null;
+  }, [conversationHistory]);
+
+  // Auto-collapse older long assistant messages unless the user manually toggled them.
+  useEffect(() => {
+    if (!conversationHistory.length) return;
+    setCollapsedById((prev) => {
+      let changed = false;
+      const next: Record<string, boolean> = { ...prev };
+
+      for (const msg of conversationHistory) {
+        if (!msg?.id || msg.sender !== "assistant") continue;
+        if (manualOverrideIdsRef.current.has(msg.id)) continue;
+
+        const isLongByChars = (msg.content?.length ?? 0) > ASSISTANT_COLLAPSE_CHAR_THRESHOLD;
+        const isTall = Boolean(tallById[msg.id]);
+        const shouldAutoCollapse = isLongByChars || isTall;
+
+        if (!shouldAutoCollapse) continue;
+
+        const desired = msg.id === latestAssistantId ? false : true;
+        if (next[msg.id] !== desired) {
+          next[msg.id] = desired;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [conversationHistory, tallById, latestAssistantId]);
+
+  const handleToggleCollapse = (messageId: string) => {
+    manualOverrideIdsRef.current.add(messageId);
+    setCollapsedById((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
+  };
 
   useEffect(() => {
     if (!scrollContainerRef.current || userHasScrolled) return;
@@ -638,16 +1020,35 @@ export function NeuralBox({
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const isVoiceMode = inputMode === "voice";
   const canSendText = Boolean(textInput.trim());
   
-  const showStopButton = state === "processing" || state === "speaking" || isProcessingInput;
-  const primaryButtonDisabled = isVoiceMode
-    ? false 
-    : !canSendText && !showStopButton;
+  const showVoiceOverlay =
+    voiceGestureState === "holding" || voiceGestureState === "recording" || voiceGestureState === "locked";
+  const showStopButton =
+    state === "processing" || state === "speaking" || isProcessingInput || showVoiceOverlay;
+  const primaryButtonDisabled = !canSendText && !showStopButton;
 
   const isActive = state === "listening" || state === "recording" || state === "processing" || state === "speaking";
   const promptVisible = forcePromptVisible || isActivated;
+
+  const formattedTimer = useMemo(() => {
+    const totalSeconds = Math.floor(recordElapsedMs / 1000);
+    const mm = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+    const ss = String(totalSeconds % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  }, [recordElapsedMs]);
+
+  useEffect(() => {
+    if (voiceGestureState !== "recording" && voiceGestureState !== "locked") {
+      setRecordElapsedMs(0);
+      return;
+    }
+    const startAt = recordStartAt ?? Date.now();
+    const id = window.setInterval(() => {
+      setRecordElapsedMs(Date.now() - startAt);
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [voiceGestureState, recordStartAt]);
 
   return (
     <div className={`flex h-full min-h-0 flex-col relative ${className}`}>
@@ -687,7 +1088,7 @@ export function NeuralBox({
 
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto px-3 pb-44 pt-6 sm:px-6"
+        className="chat-scroll-fade flex-1 overflow-y-auto px-3 pb-44 pt-6 sm:px-6"
         style={{ scrollbarGutter: "stable" }}
       >
         <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-3 sm:px-4">
@@ -695,6 +1096,18 @@ export function NeuralBox({
           {conversationHistory.length > 0 &&
             conversationHistory.map((entry) => {
               const isUser = entry.sender === "user";
+              const shouldAnimate =
+                historyHydrated &&
+                !isUser &&
+                entry.sender === "assistant" &&
+                !seenMessageIdsRef.current.has(entry.id);
+              const modelLabel = entry.model ? (getModelById(entry.model)?.name ?? entry.model) : null;
+              const isAssistant = entry.sender === "assistant";
+              const isLongByChars = (entry.content?.length ?? 0) > ASSISTANT_COLLAPSE_CHAR_THRESHOLD;
+              const isTall = Boolean(tallById[entry.id]);
+              const isCollapsible = isAssistant && (isLongByChars || isTall);
+              const isCollapsed = Boolean(collapsedById[entry.id]) && isCollapsible;
+              const preview = isAssistant ? buildCollapsedPreview(entry.content) : null;
               return (
                 <div
                   key={entry.id}
@@ -708,12 +1121,45 @@ export function NeuralBox({
                     <article
                       className={`${
                         isUser
-                          ? "rounded-3xl bg-gray-800 text-white px-5 py-3"
+                          ? "rounded-[5px] bg-gray-800 text-white px-5 py-3"
                           : "bg-transparent text-gray-900 px-2"
                       }`}
                     >
                       <div className={`space-y-3 text-[15px] leading-7 ${isUser ? "text-white" : "text-gray-900"}`}>
-                        <AnimatedContent text={entry.content} isUser={isUser} messageId={entry.id} />
+                        {isAssistant && isCollapsed && preview ? (
+                          <div className="relative">
+                            <div className="whitespace-pre-wrap text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] text-gray-900">
+                              {preview.head}
+                              {!preview.headHasTail && preview.tail && (
+                                <>
+                                  {"\n…\n"}
+                                  {preview.tail}
+                                </>
+                              )}
+                            </div>
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-gray-50 to-transparent" />
+                          </div>
+                        ) : (
+                          <div
+                            ref={(node) => {
+                              // Measure height only for assistant messages that aren't already long by chars.
+                              // If it exceeds the height threshold, we'll mark it as tall and auto-collapse older ones.
+                              if (!node || !isAssistant || isLongByChars) return;
+                              const h = node.getBoundingClientRect().height;
+                              if (h > ASSISTANT_COLLAPSE_HEIGHT_THRESHOLD_PX && !tallById[entry.id]) {
+                                setTallById((prev) => ({ ...prev, [entry.id]: true }));
+                              }
+                            }}
+                          >
+                            <AnimatedContent
+                              text={entry.content}
+                              isUser={isUser}
+                              messageId={entry.id}
+                              animate={shouldAnimate}
+                              stopSignal={stopPrintSignal}
+                            />
+                          </div>
+                        )}
                       </div>
                     </article>
                     {!isUser && (
@@ -730,6 +1176,24 @@ export function NeuralBox({
                         <button className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-900 flex-shrink-0" aria-label="Regenerate">
                           <RefreshCcw className="h-3.5 w-3.5" />
                         </button>
+                        {isCollapsible && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCollapse(entry.id)}
+                            className="ml-2 inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-1 text-[10px] font-semibold tracking-wide text-gray-600 whitespace-nowrap flex-shrink-0 hover:bg-gray-50"
+                            aria-label={isCollapsed ? "Show more" : "Show less"}
+                          >
+                            {isCollapsed ? "Show more" : "Show less"}
+                          </button>
+                        )}
+                        {modelLabel && (
+                          <span
+                            className="ml-2 inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-1 text-[10px] font-semibold tracking-wide text-gray-600 whitespace-nowrap flex-shrink-0"
+                            title={modelLabel}
+                          >
+                            {modelLabel}
+                          </span>
+                        )}
                         <div className="flex-1" />
                         <span className="text-gray-500 whitespace-nowrap text-[11px] flex-shrink-0">
                           {new Date(entry.timestamp).toLocaleString([], {
@@ -757,7 +1221,8 @@ export function NeuralBox({
                      <div className="flex flex-col gap-3 w-full max-w-4xl">
                         <article className="bg-transparent text-gray-900 px-2">
                              <div className="space-y-3 text-[15px] leading-7 text-gray-900">
-                                <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" />
+                                {/* Streaming content is already incremental; don't re-type it */}
+                                <AnimatedContent text={streamingContent} isUser={false} messageId="streaming" animate={false} stopSignal={stopPrintSignal} />
                              </div>
                         </article>
                      </div>
@@ -769,13 +1234,8 @@ export function NeuralBox({
                  </div>
             )}
 
-          {state === "processing" && !streamingContent && (
-            <article className="flex items-center gap-3 rounded-[24px] border border-gray-100 bg-gray-50/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black text-white flex-shrink-0">
-                <VIIMAnimation state="processing" size="custom" customSize={24} container="none" />
-              </div>
-              {thinkingMessages[thinkingIndex]}
-            </article>
+          {assistantStatusText && (
+            <div className="assistant-status">{assistantStatusText}</div>
           )}
 
           {!hasActivatedOnce && (
@@ -900,17 +1360,17 @@ export function NeuralBox({
                   </div>
                 </div>
 
-                <div className="relative z-10 flex flex-1 flex-col rounded-[5px] border border-gray-300 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
+                <div className="relative z-10 flex flex-col rounded-[5px] border-[3px] border-gray-300 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2">
                   <textarea
                     ref={textareaRef}
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
-                    placeholder={isVoiceMode ? "Voice mode active" : "What up?"}
-                    disabled={isVoiceMode || isProcessingInput || limitReached}
+                    placeholder="What up?"
+                    disabled={isProcessingInput || limitReached || voiceGestureState !== "idle"}
                     rows={1}
-                    className="w-full flex-1 resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
+                    className="w-full resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && !isVoiceMode) {
+                      if (e.key === "Enter" && !e.shiftKey && voiceGestureState === "idle") {
                         e.preventDefault();
                         handleTextSubmit();
                       }
@@ -935,22 +1395,15 @@ export function NeuralBox({
                     </button>
                     <button
                       className="rounded-full p-1.5 transition hover:text-gray-900"
-                      aria-label="Open tools"
-                      onClick={() => setIsPlusMenuOpen((prev) => !prev)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                    <button
-                      className="rounded-full p-1.5 transition hover:text-gray-900"
                       aria-label="Camera"
-                      onClick={() => setIsPlusMenuOpen(true)}
+                      disabled
                     >
                       <Camera className="h-4 w-4" />
                     </button>
                     <button
                       className="rounded-full p-1.5 transition hover:text-gray-900"
                       aria-label="Photo library"
-                      onClick={() => setIsPlusMenuOpen(true)}
+                      disabled
                     >
                       <Image className="h-4 w-4" />
                     </button>
@@ -961,6 +1414,10 @@ export function NeuralBox({
               <button
                 onClick={handlePrimaryButtonClick}
                 disabled={primaryButtonDisabled && Boolean(currentUser)}
+                onPointerDown={handleNeuralBoxPointerDown}
+                onPointerMove={handleNeuralBoxPointerMove}
+                onPointerUp={handleNeuralBoxPointerUp}
+                onPointerCancel={handleNeuralBoxPointerCancel}
                 className={`flex flex-col items-center gap-1 rounded-3xl px-2 py-1 transition ${
                   primaryButtonDisabled && Boolean(currentUser) ? "cursor-not-allowed opacity-40" : "hover:scale-[1.02]"
                 }`}
@@ -979,9 +1436,19 @@ export function NeuralBox({
                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-black shadow-lg">
                            <Square className="h-3 w-3 text-white fill-white" />
                        </div>
+                       {showVoiceOverlay && (
+                         <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                           {voiceGestureState === "locked" ? `Locked ${formattedTimer}` : formattedTimer}
+                         </span>
+                       )}
                        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
                            Stop
                        </span>
+                       {voiceGestureState === "holding" || voiceGestureState === "recording" ? (
+                         <span className="text-[9px] font-semibold tracking-wide text-gray-400 whitespace-nowrap">
+                           Slide ← to cancel
+                         </span>
+                       ) : null}
                    </>
                 ) : (
                     <>
@@ -995,7 +1462,7 @@ export function NeuralBox({
                           />
                         </div>
                         <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-                          {isVoiceMode ? (state === "recording" ? "Stop" : "Speak") : "Send"}
+                          Send
                         </span>
                     </>
                 )}
@@ -1005,70 +1472,7 @@ export function NeuralBox({
         </div>
       )}
 
-      {isPlusMenuOpen && (
-        <div className="fixed inset-0 z-20 bg-black/30 backdrop-blur-[1px]" onClick={() => setIsPlusMenuOpen(false)} />
-      )}
-
-      <div
-        className={`fixed inset-x-0 bottom-0 z-40 transform transition-transform duration-300 ${
-          isPlusMenuOpen ? "translate-y-0" : "translate-y-full"
-        }`}
-      >
-        <div className="rounded-t-[28px] border border-gray-100 bg-white p-5 shadow-2xl">
-          <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-gray-300" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {[
-              { icon: Camera, label: "Camera" },
-              { icon: Image, label: "Photos" },
-              { icon: PenSquare, label: "Create image" },
-              { icon: BookOpen, label: "Summarize" },
-              { icon: Globe, label: "Research" },
-              { icon: Bot, label: "Agents" },
-              { icon: Paperclip, label: "Attach" },
-              { icon: ShoppingBag, label: "Shop" },
-            ].map((action) => {
-              const Icon = action.icon;
-              return (
-                <button
-                  key={action.label}
-                  className="flex flex-col items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-4 text-xs font-semibold text-gray-700 transition hover:border-gray-200"
-                >
-                  <Icon className="h-5 w-5 text-gray-900" />
-                  {action.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-5 flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
-            <span>Input mode</span>
-            <div className="inline-flex rounded-full bg-white p-1 text-xs font-semibold text-gray-500">
-              <button
-                onClick={() => setInputMode("text")}
-                className={`px-3 py-1 rounded-full transition ${
-                  !isVoiceMode ? "bg-black text-white shadow" : "text-gray-500"
-                }`}
-              >
-                Chat
-              </button>
-              <button
-                onClick={() => setInputMode("voice")}
-                className={`px-3 py-1 rounded-full transition ${
-                  isVoiceMode ? "bg-black text-white shadow" : "text-gray-500"
-                }`}
-              >
-                Voice
-              </button>
-            </div>
-          </div>
-          {isKeyboardMockVisible && (
-            <div className="mt-5">
-              <MobileKeyboardMock />
-            </div>
-          )}
-        </div>
-      </div>
-
-      <ActiveIndicator active={isActive} />
+      {/* ActiveIndicator removed (was a red pulsing overlay shown while active) */}
     </div>
   );
 }

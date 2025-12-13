@@ -63,7 +63,7 @@ export function subscribeToConversations(
 
 export function subscribeToMessages(
   conversationId: string,
-  callback: (messages: ConversationMessage[]) => void,
+  callback: (messages: ConversationMessage[], meta?: { fromCache: boolean }) => void,
   onError?: (error: unknown) => void
 ) {
   const firestore = assertDb();
@@ -72,6 +72,7 @@ export function subscribeToMessages(
 
   const unsubscribe = onSnapshot(
     q,
+    { includeMetadataChanges: true },
     (snapshot) => {
       const messages: ConversationMessage[] = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
@@ -88,7 +89,7 @@ export function subscribeToMessages(
           model: data.model,
         };
       });
-      callback(messages);
+      callback(messages, { fromCache: snapshot.metadata.fromCache });
     },
     (error) => {
       console.warn("Message subscription error:", error);

@@ -2,11 +2,13 @@ import { initializeApp, getApps, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getAnalytics, Analytics } from "firebase/analytics";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 
 let firebaseApp: FirebaseApp | undefined;
 let auth: Auth | undefined;
 let db: Firestore | undefined;
 let analytics: Analytics | undefined;
+let storage: FirebaseStorage | undefined;
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -33,6 +35,7 @@ if (typeof window !== "undefined" && hasRequiredConfig) {
     }
     auth = getAuth(firebaseApp);
     db = getFirestore(firebaseApp);
+    storage = getStorage(firebaseApp);
 
     // Initialize Analytics only in browser and if measurementId is provided
     if (firebaseConfig.measurementId) {
@@ -56,4 +59,5 @@ if (typeof window !== "undefined" && hasRequiredConfig) {
 }
 
 export { firebaseApp, auth, db, analytics };
+export { storage };
 

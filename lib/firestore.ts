@@ -2,6 +2,7 @@ import { getAdminFirestore } from "./firebase/admin";
 import type { ViimProfile, ViimVerification, ViimSession, ViimDataset, UserDoc, Voiceprint, VoiceprintSample } from "@/types/viim";
 import { Timestamp } from "firebase-admin/firestore";
 import { averageEmbeddings } from "./voiceprintUtils";
+import { nanoid } from "nanoid";
 
 export async function getUserDoc(userId: string): Promise<UserDoc | null> {
   const adminFirestore = getAdminFirestore();
@@ -600,6 +601,216 @@ export async function getAllVoiceprints(): Promise<Voiceprint[]> {
   }
 
   return voiceprints;
+}
+
+// ==================== Vault Bio ====================
+
+export async function getVaultBio(userId: string): Promise<{ content: string | null; updatedAt: Date | null }> {
+  const adminFirestore = getAdminFirestore();
+  const docRef = adminFirestore.collection("users").doc(userId).collection("vault").doc("bio");
+  const doc = await docRef.get();
+  if (!doc.exists) {
+    return { content: null, updatedAt: null };
+  }
+  const data = doc.data() as { content?: string; updatedAt?: Timestamp };
+  return {
+    content: data.content ?? null,
+    updatedAt: data.updatedAt ? data.updatedAt.toDate() : null,
+  };
+}
+
+export async function saveVaultBio(userId: string, content: string): Promise<{ content: string; updatedAt: Date }> {
+  const adminFirestore = getAdminFirestore();
+  const docRef = adminFirestore.collection("users").doc(userId).collection("vault").doc("bio");
+  const now = Timestamp.now();
+  await docRef.set(
+    {
+      content,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+  return { content, updatedAt: now.toDate() };
+}
+
+export interface VaultFolder {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface VaultFile {
+  id: string;
+  name: string;
+  folderId: string | null;
+  downloadUrl: string;
+  size: number;
+  contentType: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export async function listVaultFolders(userId: string): Promise<VaultFolder[]> {
+  const adminFirestore = getAdminFirestore();
+  const snapshot = await adminFirestore
+    .collection("users")
+    .doc(userId)
+    .collection("vaultFolders")
+    .orderBy("updatedAt", "desc")
+    .get();
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as any;
+    return {
+      id: doc.id,
+      name: data.name,
+      createdAt: data.createdAt?.toDate?.() ?? new Date(),
+      updatedAt: data.updatedAt?.toDate?.() ?? new Date(),
+    };
+  });
+}
+
+export async function createVaultFolder(userId: string, name: string): Promise<VaultFolder> {
+  const adminFirestore = getAdminFirestore();
+  const now = Timestamp.now();
+  const id = nanoid();
+  const docRef = adminFirestore.collection("users").doc(userId).collection("vaultFolders").doc(id);
+  await docRef.set({
+    name,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { id, name, createdAt: now.toDate(), updatedAt: now.toDate() };
+}
+
+export async function listVaultFiles(userId: string, folderId: string | null): Promise<VaultFile[]> {
+  const adminFirestore = getAdminFirestore();
+  let query = adminFirestore.collection("users").doc(userId).collection("vaultFiles") as FirebaseFirestore.Query;
+  if (folderId) {
+    query = query.where("folderId", "==", folderId);
+  }
+  query = query.orderBy("updatedAt", "desc");
+  const snapshot = await query.get();
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as any;
+    return {
+      id: doc.id,
+      name: data.name,
+      folderId: data.folderId ?? null,
+      downloadUrl: data.downloadUrl,
+      size: data.size,
+      contentType: data.contentType,
+      createdAt: data.createdAt?.toDate?.() ?? new Date(),
+      updatedAt: data.updatedAt?.toDate?.() ?? new Date(),
+    };
+  });
+}
+
+export async function createVaultFile(
+  userId: string,
+  file: { name: string; folderId: string | null; downloadUrl: string; size: number; contentType: string }
+): Promise<VaultFile> {
+  const adminFirestore = getAdminFirestore();
+  const now = Timestamp.now();
+  const id = nanoid();
+  const docRef = adminFirestore.collection("users").doc(userId).collection("vaultFiles").doc(id);
+  await docRef.set({
+    ...file,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { ...file, id, createdAt: now.toDate(), updatedAt: now.toDate() };
+}
+
+// ==================== Drive (outside Vault) ====================
+
+export interface DriveFolder {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  folderId: string | null;
+  downloadUrl: string;
+  size: number;
+  contentType: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export async function listDriveFolders(userId: string): Promise<DriveFolder[]> {
+  const adminFirestore = getAdminFirestore();
+  const snapshot = await adminFirestore
+    .collection("users")
+    .doc(userId)
+    .collection("driveFolders")
+    .orderBy("updatedAt", "desc")
+    .get();
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as any;
+    return {
+      id: doc.id,
+      name: data.name,
+      createdAt: data.createdAt?.toDate?.() ?? new Date(),
+      updatedAt: data.updatedAt?.toDate?.() ?? new Date(),
+    };
+  });
+}
+
+export async function createDriveFolder(userId: string, name: string): Promise<DriveFolder> {
+  const adminFirestore = getAdminFirestore();
+  const now = Timestamp.now();
+  const id = nanoid();
+  const docRef = adminFirestore.collection("users").doc(userId).collection("driveFolders").doc(id);
+  await docRef.set({
+    name,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { id, name, createdAt: now.toDate(), updatedAt: now.toDate() };
+}
+
+export async function listDriveFiles(userId: string, folderId: string | null): Promise<DriveFile[]> {
+  const adminFirestore = getAdminFirestore();
+  let query = adminFirestore.collection("users").doc(userId).collection("driveFiles") as FirebaseFirestore.Query;
+  if (folderId) {
+    query = query.where("folderId", "==", folderId);
+  }
+  query = query.orderBy("updatedAt", "desc");
+  const snapshot = await query.get();
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as any;
+    return {
+      id: doc.id,
+      name: data.name,
+      folderId: data.folderId ?? null,
+      downloadUrl: data.downloadUrl,
+      size: data.size,
+      contentType: data.contentType,
+      createdAt: data.createdAt?.toDate?.() ?? new Date(),
+      updatedAt: data.updatedAt?.toDate?.() ?? new Date(),
+    };
+  });
+}
+
+export async function createDriveFile(
+  userId: string,
+  file: { name: string; folderId: string | null; downloadUrl: string; size: number; contentType: string }
+): Promise<DriveFile> {
+  const adminFirestore = getAdminFirestore();
+  const now = Timestamp.now();
+  const id = nanoid();
+  const docRef = adminFirestore.collection("users").doc(userId).collection("driveFiles").doc(id);
+  await docRef.set({
+    ...file,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { ...file, id, createdAt: now.toDate(), updatedAt: now.toDate() };
 }
 
 export async function findMatchingVoiceprints(

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/ensureMiddlewareManifest.js",
     "start": "next start",
     "lint": "eslint",
     "seed:firestore": "npx tsx scripts/seedFirestore.ts"

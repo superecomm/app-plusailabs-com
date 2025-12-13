@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useRef, useEffect, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useReducer, useRef, useEffect, ReactNode, useCallback, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   subscribeToConversations,
@@ -15,12 +15,70 @@ import {
 } from "@/lib/conversationService";
 import type { ConversationMessage, ConversationPreview } from "@/types/conversation";
 import { nanoid } from "nanoid";
+import type { LLMErrorCategory } from "@/lib/models/llmModels";
 
 export type ChatState = "idle" | "listening" | "speaking" | "recording" | "processing";
+
+export type ExecState =
+  | "idle"
+  | "validating"
+  | "routing"
+  | "preflight"
+  | "tooling"
+  | "streaming"
+  | "stalled"
+  | "retrying"
+  | "finalizing"
+  | "limited"
+  | "error"
+  | "cancelled"
+  | "done";
+
+// Action types for state machine
+export type ExecAction = 
+  | { type: 'START_VALIDATION'; requestId: string }
+  | { type: 'BEGIN_ROUTING' }
+  | { type: 'BEGIN_PREFLIGHT' }
+  | { type: 'START_STREAMING' }
+  | { type: 'MARK_STALLED' }
+  | { type: 'RESUME_STREAMING' }
+  | { type: 'RETRY' }
+  | { type: 'COMPLETE'; reason?: string }
+  | { type: 'FAIL'; error: string; category?: LLMErrorCategory }
+  | { type: 'CANCEL' }
+  | { type: 'HIT_LIMIT' }
+  | { type: 'RESET' };
+
+// Execution state data with metadata
+export interface ExecStateData {
+  state: ExecState;
+  requestId: string | null;
+  error: string | null;
+  errorCategory: LLMErrorCategory | null;
+  tokenCount: number;
+  charCount: number;
+}
+
+type PendingSubmission = {
+  text: string;
+  requestId?: string;
+};
 
 interface ChatContextType {
   state: ChatState;
   setState: (state: ChatState) => void;
+  execState: ExecState;
+  execData: ExecStateData;
+  dispatchExec: React.Dispatch<ExecAction>;
+  requestId: string | null;
+  setRequestId: (id: string | null) => void;
+  canSubmit: boolean;
+  markTokenActivity: () => void;
+  abortController: AbortController | null;
+  setAbortController: (ctrl: AbortController | null) => void;
+  statusLabel: string | null;
+  setStatusLabel: (text: string | null) => void;
+  activeRequestId: string | null;
   lastTranscript: string;
   setLastTranscript: (transcript: string) => void;
   lastPrompt: string;
@@ -54,6 +112,10 @@ interface ChatContextType {
     content: string,
     options?: { avatarType?: "user" | "neural"; avatarUrl?: string; model?: string; tokenCount?: number }
   ) => Promise<string | null>;
+  pendingQueue: PendingSubmission[];
+  enqueueSubmission: (item: PendingSubmission) => void;
+  shiftSubmission: () => PendingSubmission | undefined;
+  clearQueue: () => void;
   preferences: {
     autoAdvance: boolean;
     showTranscript: boolean;
@@ -70,9 +132,177 @@ function generateTitleFromText(text: string) {
   return trimmed.slice(0, 48) + (trimmed.length > 48 ? "…" : "");
 }
 
+// Execution state reducer with transition validation
+function execReducer(state: ExecStateData, action: ExecAction): ExecStateData {
+  // Helper to check if current state allows transition
+  const canTransitionFrom = (allowedStates: ExecState[]): boolean => {
+    return allowedStates.includes(state.state);
+  };
+
+  // Log invalid transitions for debugging
+  const logInvalidTransition = (action: ExecAction, allowedFrom: ExecState[]) => {
+    console.warn(
+      `[State Machine] Invalid transition: ${state.state} → ${action.type}`,
+      `\nAllowed from: [${allowedFrom.join(', ')}]`
+    );
+  };
+
+  switch (action.type) {
+    case 'START_VALIDATION': {
+      const allowedFrom: ExecState[] = ['idle', 'done', 'error', 'limited', 'cancelled'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return {
+        state: 'validating',
+        requestId: action.requestId,
+        error: null,
+        errorCategory: null,
+        tokenCount: 0,
+        charCount: 0,
+      };
+    }
+
+    case 'BEGIN_ROUTING': {
+      const allowedFrom: ExecState[] = ['validating'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { ...state, state: 'routing' };
+    }
+
+    case 'BEGIN_PREFLIGHT': {
+      const allowedFrom: ExecState[] = ['routing'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { ...state, state: 'preflight' };
+    }
+
+    case 'START_STREAMING': {
+      const allowedFrom: ExecState[] = ['preflight', 'tooling', 'retrying'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { ...state, state: 'streaming' };
+    }
+
+    case 'MARK_STALLED': {
+      const allowedFrom: ExecState[] = ['streaming'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { ...state, state: 'stalled' };
+    }
+
+    case 'RESUME_STREAMING': {
+      const allowedFrom: ExecState[] = ['stalled'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { ...state, state: 'streaming' };
+    }
+
+    case 'RETRY': {
+      const allowedFrom: ExecState[] = ['stalled', 'error'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { ...state, state: 'retrying', error: null, errorCategory: null };
+    }
+
+    case 'COMPLETE': {
+      const allowedFrom: ExecState[] = ['streaming', 'stalled'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return { 
+        ...state, 
+        state: 'done',
+        requestId: null,
+      };
+    }
+
+    case 'FAIL': {
+      const allowedFrom: ExecState[] = ['validating', 'routing', 'preflight', 'tooling', 'streaming', 'stalled', 'retrying'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return {
+        ...state,
+        state: 'error',
+        error: action.error,
+        errorCategory: action.category ?? null,
+        requestId: null,
+      };
+    }
+
+    case 'CANCEL': {
+      const allowedFrom: ExecState[] = ['validating', 'routing', 'preflight', 'tooling', 'streaming', 'stalled', 'retrying'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return {
+        ...state,
+        state: 'cancelled',
+        requestId: null,
+      };
+    }
+
+    case 'HIT_LIMIT': {
+      const allowedFrom: ExecState[] = ['validating', 'preflight', 'streaming', 'stalled'];
+      if (!canTransitionFrom(allowedFrom)) {
+        logInvalidTransition(action, allowedFrom);
+        return state;
+      }
+      return {
+        ...state,
+        state: 'limited',
+        requestId: null,
+      };
+    }
+
+    case 'RESET': {
+      // RESET can happen from any state (emergency escape hatch)
+      return {
+        state: 'idle',
+        requestId: null,
+        error: null,
+        errorCategory: null,
+        tokenCount: 0,
+        charCount: 0,
+      };
+    }
+
+    default: {
+      console.warn('[State Machine] Unknown action type:', action);
+      return state;
+    }
+  }
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useAuth();
   const [state, setState] = useState<ChatState>("idle");
+  const [execData, dispatchExec] = useReducer(execReducer, {
+    state: 'idle',
+    requestId: null,
+    error: null,
+    errorCategory: null,
+    tokenCount: 0,
+    charCount: 0,
+  });
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [lastTranscript, setLastTranscript] = useState("");
   const [lastPrompt, setLastPrompt] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -90,6 +320,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     autoAdvance: true,
     showTranscript: true,
   });
+  const lastTokenAtRef = useRef<number | null>(null);
+  const [pendingQueue, setPendingQueue] = useState<PendingSubmission[]>([]);
+  const [abortController, setAbortControllerState] = useState<AbortController | null>(null);
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
 
   const addAudioBuffer = (buffer: Blob) => {
     audioBuffersRef.current.push(buffer);
@@ -102,6 +337,53 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const setPreferences = (prefs: Partial<ChatContextType["preferences"]>) => {
     setPreferencesState((prev) => ({ ...prev, ...prefs }));
   };
+
+  const enqueueSubmission = (item: PendingSubmission) => {
+    setPendingQueue((prev) => [...prev, item]);
+  };
+
+  const shiftSubmission = () => {
+    let next: PendingSubmission | undefined;
+    setPendingQueue((prev) => {
+      if (prev.length === 0) return prev;
+      const [, ...rest] = prev;
+      next = prev[0];
+      return rest;
+    });
+    return next;
+  };
+
+  const clearQueue = () => setPendingQueue([]);
+
+  const setAbortController = (ctrl: AbortController | null) => {
+    if (abortController) {
+      abortController.abort();
+    }
+    setAbortControllerState(ctrl);
+  };
+
+  const canSubmit = useMemo(() => {
+    return ["idle", "done", "error", "limited", "cancelled"].includes(execData.state) && !requestId && !activeRequestId;
+  }, [execData.state, requestId, activeRequestId]);
+
+  const markTokenActivity = () => {
+    lastTokenAtRef.current = Date.now();
+    if (execData.state === "stalled") {
+      dispatchExec({ type: 'RESUME_STREAMING' });
+    }
+  };
+
+  useEffect(() => {
+    if (execData.state !== "streaming") return;
+    const id = window.setInterval(() => {
+      const last = lastTokenAtRef.current;
+      if (!last) return;
+      if (Date.now() - last > 2000) {
+        dispatchExec({ type: 'MARK_STALLED' });
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [execData.state]);
 
   // Subscribe to conversations when currentUser changes
   useEffect(() => {
@@ -132,21 +414,32 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     const cached = loadCachedConversationMessages(currentUser.uid, currentConversationId);
-    if (cached.length) {
+    const hadLocalCache = cached.length > 0;
+    if (hadLocalCache) {
       setConversationHistory(cached);
     }
+    let sawServerSnapshot = false;
 
     try {
       const unsubscribe = subscribeToMessages(
         currentConversationId,
-        (messages) => {
+        (messages, meta) => {
+          // Prevent: cached messages -> empty fromCache snapshot -> cached messages again (blink)
+          if (hadLocalCache && !sawServerSnapshot && messages.length === 0 && meta?.fromCache) {
+            return;
+          }
+
+          if (!meta?.fromCache) {
+            sawServerSnapshot = true;
+          }
+
           setConversationHistory(messages);
           cacheConversationMessages(currentUser.uid, currentConversationId, messages);
         },
         (error) => {
-          console.warn("Message subscription failed, resetting conversation:", error);
-          setConversationHistory([]);
-          setCurrentConversationId(null);
+          // Avoid wiping the UI on transient snapshot failures (this can cause a "blink" on refresh).
+          // Keep whatever we have (often local cache) and let the user retry via refresh/navigation.
+          console.warn("Message subscription failed:", error);
         }
       );
       return unsubscribe;
@@ -279,6 +572,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       value={{
         state,
         setState,
+        execState: execData.state,
+        execData,
+        dispatchExec,
+        requestId,
+        setRequestId,
+        activeRequestId,
+        canSubmit,
+        markTokenActivity,
+        abortController,
+        setAbortController,
+        statusLabel,
+        setStatusLabel,
+        pendingQueue,
+        enqueueSubmission,
+        shiftSubmission,
+        clearQueue,
         lastTranscript,
         setLastTranscript,
         lastPrompt,
