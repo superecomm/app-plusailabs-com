@@ -1465,7 +1465,7 @@ export function NeuralBox({
                 {usageWarning}
               </div>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-4">
               <div className="flex flex-1 flex-col items-stretch gap-3">
                 <div className="relative px-2 sm:px-0 min-h-[1px]">
                   {/* Agent Menu */}
@@ -1623,7 +1623,7 @@ export function NeuralBox({
                 onPointerMove={handleNeuralBoxPointerMove}
                 onPointerUp={handleNeuralBoxPointerUp}
                 onPointerCancel={handleNeuralBoxPointerCancel}
-                className={`flex flex-col items-center gap-1 rounded-3xl px-2 py-1 transition ml-2 mr-3 ${
+                className={`flex flex-col items-center gap-1 rounded-3xl px-2 py-1 transition mr-3 ${
                   primaryButtonDisabled && Boolean(currentUser) ? "cursor-not-allowed opacity-40" : "hover:scale-[1.02]"
                 }`}
               >
@@ -1661,7 +1661,7 @@ export function NeuralBox({
                    </>
                 ) : (
                     <>
-                        <div className="relative flex h-7 w-7 items-center justify-center rounded-full shadow-lg bg-white">
+                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full shadow-lg bg-white">
                           <VIIMAnimation
                             state={state}
                             size="xxs"
