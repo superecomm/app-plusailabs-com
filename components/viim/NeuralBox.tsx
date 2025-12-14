@@ -67,6 +67,7 @@ interface NeuralBoxProps {
   showInputPanel?: boolean;
   forcePromptVisible?: boolean;
   showKeyboardMock?: boolean;
+  theme?: "light" | "dark";
   blurInput?: boolean;
   disableInteractions?: boolean;
   openAuthOnMount?: boolean;
@@ -249,6 +250,7 @@ export function NeuralBox({
   blurInput = false,
   disableInteractions = false,
   openAuthOnMount = false,
+  theme = "light",
 }: NeuralBoxProps) {
   const {
     state,
@@ -1174,10 +1176,12 @@ export function NeuralBox({
                       className={`${
                         isUser
                           ? "rounded-[5px] bg-gray-700 text-white px-5 py-3"
-                          : "text-gray-900"
+                          : theme === "dark" ? "text-white" : "text-gray-900"
                       }`}
                     >
-                      <div className={`space-y-3 text-[15px] leading-7 ${isUser ? "text-white" : "text-gray-900"}`}>
+                      <div className={`space-y-3 text-[15px] leading-7 ${
+                        isUser ? "text-white" : theme === "dark" ? "text-white" : "text-gray-900"
+                      }`}>
                         {isAssistant && isCollapsed && preview ? (
                           <div className="relative">
                             <div className="whitespace-pre-wrap text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] text-gray-900">
@@ -1232,7 +1236,11 @@ export function NeuralBox({
                           <button
                             type="button"
                             onClick={() => handleToggleCollapse(entry.id)}
-                            className="ml-2 inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-1 text-[10px] font-semibold tracking-wide text-gray-600 whitespace-nowrap flex-shrink-0 hover:bg-gray-50"
+                            className={`ml-2 inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold tracking-wide whitespace-nowrap flex-shrink-0 ${
+                              theme === "dark" 
+                                ? "bg-gray-600 text-black border border-gray-600 hover:bg-gray-500"
+                                : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                            }`}
                             aria-label={isCollapsed ? "Show more" : "Show less"}
                           >
                             {isCollapsed ? "Show more" : "Show less"}
@@ -1240,7 +1248,11 @@ export function NeuralBox({
                         )}
                         {modelLabel && (
                           <span
-                            className="ml-2 inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-1 text-[10px] font-semibold tracking-wide text-gray-600 whitespace-nowrap flex-shrink-0"
+                            className={`ml-2 inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold tracking-wide whitespace-nowrap flex-shrink-0 ${
+                              theme === "dark"
+                                ? "bg-gray-600 text-black border border-gray-600"
+                                : "border border-gray-200 bg-white text-gray-600"
+                            }`}
                             title={modelLabel}
                           >
                             {modelLabel}
@@ -1265,7 +1277,8 @@ export function NeuralBox({
                       </div>
                     )}
                   </div>
-                  {!isUser && (
+                  {/* Hide assistant avatar in dark mode */}
+                  {!isUser && theme === "light" && (
                     <div className="flex-shrink-0 ml-3 pt-5">
                         {renderAvatar(entry.sender as any, entry.avatarUrl)}
                     </div>
@@ -1455,7 +1468,11 @@ export function NeuralBox({
                   </div>
                 </div>
 
-                <div className="relative z-10 flex flex-col rounded-[5px] border-[3px] border-gray-300 bg-white/95 px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] gap-2 mr-3">
+                <div className={`relative z-10 flex flex-col rounded-[5px] border-[3px] px-4 py-2 gap-2 mr-3 ${
+                  theme === "dark"
+                    ? "border-gray-600 bg-black text-white"
+                    : "border-gray-300 bg-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
+                }`}>
                   <textarea
                     ref={textareaRef}
                     value={textInput}
@@ -1463,7 +1480,11 @@ export function NeuralBox({
                     placeholder="What up?"
                     disabled={isProcessingInput || limitReached || voiceGestureState !== "idle"}
                     rows={1}
-                    className="w-full resize-none overflow-y-hidden bg-transparent text-sm leading-6 text-gray-900 placeholder:text-gray-500 focus:outline-none [&::-webkit-scrollbar]:hidden"
+                    className={`w-full resize-none overflow-y-hidden bg-transparent text-sm leading-6 focus:outline-none [&::-webkit-scrollbar]:hidden ${
+                      theme === "dark"
+                        ? "text-white placeholder:text-gray-400"
+                        : "text-gray-900 placeholder:text-gray-500"
+                    }`}
                     onKeyDown={(e) => {
                       // Handle autocomplete navigation first
                       autocomplete.onKeyDown(e);
@@ -1536,11 +1557,15 @@ export function NeuralBox({
                            <Square className="h-3 w-3 text-white fill-white" />
                        </div>
                        {showVoiceOverlay && (
-                         <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                         <span className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                           theme === "dark" ? "text-gray-400" : "text-gray-500"
+                         }`}>
                            {voiceGestureState === "locked" ? `Locked ${formattedTimer}` : formattedTimer}
                          </span>
                        )}
-                       <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                       <span className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                         theme === "dark" ? "text-gray-400" : "text-gray-500"
+                       }`}>
                            Stop
                        </span>
                        {voiceGestureState === "holding" || voiceGestureState === "recording" ? (
@@ -1551,7 +1576,9 @@ export function NeuralBox({
                    </>
                 ) : (
                     <>
-                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-black shadow-lg">
+                        <div className={`relative flex h-8 w-8 items-center justify-center rounded-full shadow-lg ${
+                          theme === "dark" ? "bg-white" : "bg-black"
+                        }`}>
                           <VIIMAnimation
                             state={state}
                             size="xxs"

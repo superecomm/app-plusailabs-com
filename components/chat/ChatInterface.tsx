@@ -462,6 +462,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                 forcePromptVisible
                 blurInput={!currentUser || needsSubscription}
                 openAuthOnMount={!currentUser && autoAuth}
+                theme={theme}
               />
             )}
             {/* Cloud view - accessible from sidebar only */}
