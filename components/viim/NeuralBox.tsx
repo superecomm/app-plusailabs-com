@@ -523,24 +523,23 @@ export function NeuralBox({
     lastTokenAtRef.current = Date.now();
     setAssistantStatusText(thinkingMessages[thinkingIndex] || "Analyzing…");
     
-    // Start smooth display interval
+    // Start smooth display interval with adaptive pacing
     displayIntervalRef.current = window.setInterval(() => {
       setDisplayedContent(prev => {
         const buffer = streamBufferRef.current;
         if (prev.length >= buffer.length) return prev;
         
-        // Display character by character for smooth typewriter effect
-        const nextChar = buffer[prev.length];
-        const newContent = prev + nextChar;
+        const progress = prev.length / Math.max(buffer.length, 1);
         
-        // Check if we just added punctuation for natural pause
-        if (/[.!?]\s*$/.test(newContent)) {
-          // Slight pause after punctuation (handled by interval timing)
-        }
+        // Display 1-3 characters per tick based on progress
+        // First 50%: character by character (slow and smooth)
+        // After 50%: 2-3 chars per tick (catch up faster)
+        const charsToAdd = progress < 0.5 ? 1 : progress < 0.8 ? 2 : 3;
         
-        return newContent;
+        const nextChars = buffer.slice(prev.length, prev.length + charsToAdd);
+        return prev + nextChars;
       });
-    }, 40); // 40ms per character = smooth, deliberate pace
+    }, 35); // 35ms interval = smooth pacing
 
     try {
         const onToken = (token: string) => {
