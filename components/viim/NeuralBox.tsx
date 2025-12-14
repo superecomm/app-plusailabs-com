@@ -723,16 +723,16 @@ export function NeuralBox({
     const trimmedInput = value.trim();
     setLastPrompt(trimmedInput);
     
-    // Clear input immediately
-    if (typeof overrideText !== "string") {
-      setTextInput("");
-    }
-    
-    // Save user message with vault refs
+    // Save user message with vault refs FIRST
     await appendMessageToConversation("user", trimmedInput, { 
       avatarType: "user",
       vaultRefs: vaultRefs.length > 0 ? vaultRefs : undefined,
     });
+    
+    // Clear input after message is saved
+    if (typeof overrideText !== "string") {
+      setTextInput("");
+    }
 
     dispatchExec({ type: 'BEGIN_ROUTING' });
     dispatchExec({ type: 'BEGIN_PREFLIGHT' });
@@ -1274,16 +1274,19 @@ export function NeuralBox({
               );
             })}
 
-            {/* Streaming Bubble - live incremental streaming */}
+            {/* Streaming Bubble - with typewriter animation */}
             {streamingContent && (
                  <div className="flex w-full justify-start bg-gray-50/60 py-5 px-3">
                      <div className="flex flex-col gap-3 w-full max-w-4xl">
                         <article className="bg-transparent text-gray-900 px-2">
                              <div className="space-y-3 text-[15px] leading-7 text-gray-900">
-                                {/* Streaming is already incremental - show directly without typewriter */}
-                                <div className="whitespace-pre-wrap text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] text-gray-900">
-                                  {streamingContent}
-                                </div>
+                                <AnimatedContent 
+                                  text={streamingContent} 
+                                  isUser={false} 
+                                  messageId="streaming" 
+                                  animate={true} 
+                                  stopSignal={stopPrintSignal} 
+                                />
                              </div>
                         </article>
                      </div>
