@@ -12,7 +12,8 @@ import { NeuralBox } from "@/components/viim/NeuralBox";
 import type { VoiceLockDataset, VoiceLockProfile } from "@/types/voiceLock";
 import { Menu, X, Edit2, Trash2, MessageSquare, Cloud, FolderPlus, UploadCloud, Sun, Moon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import plusAi from "@/assets/plusailabs brand assets/plusai-full-logo-black.png";
+import plusAiBlack from "@/assets/plusailabs brand assets/plusai-full-logo-black.png";
+import plusAiWhite from "@/assets/plusailabs brand assets/plusai-full-logo-white.png";
 import { storage } from "@/lib/firebase/client";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
@@ -369,7 +370,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
   return (
     <div
       className={`flex h-screen flex-col overflow-hidden relative ${
-        theme === "dark" ? "bg-gray-950 text-gray-50" : "bg-transparent text-gray-900"
+        theme === "dark" ? "bg-black text-white" : "bg-transparent text-gray-900"
       }`}
       style={{ fontSize: `${0.85 + textSizeSlider * 0.45}rem` }}
     >
@@ -384,15 +385,19 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
         )}
 
         <header
-          className={`fixed top-0 left-0 right-0 z-30 border-b border-transparent backdrop-blur-sm ${
-            theme === "dark" ? "bg-gray-900/90" : "bg-white/95"
+          className={`fixed top-0 left-0 right-0 z-30 border-b backdrop-blur-sm ${
+            theme === "dark" ? "bg-black/90 border-gray-800" : "bg-white/95 border-transparent"
           } ${!currentUser ? "pointer-events-none select-none opacity-50" : ""}`}
         >
           <div style={{ paddingTop: 'env(safe-area-inset-top)' }} className="w-full">
             <div className="mx-auto flex h-12 w-full max-w-5xl items-center gap-3 px-3">
               <div className="flex items-center gap-2">
                 <button
-                  className="rounded-full p-2 text-gray-900 transition hover:bg-gray-100"
+                  className={`rounded-full p-2 transition ${
+                    theme === "dark" 
+                      ? "text-white hover:bg-gray-800" 
+                      : "text-gray-900 hover:bg-gray-100"
+                  }`}
                   aria-label="Open conversation history"
                   onClick={() => setIsHistoryOpen(true)}
                   disabled={!currentUser}
@@ -400,7 +405,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                   <Menu className="h-4 w-4" />
                 </button>
                 <Image
-                  src={plusAi}
+                  src={theme === "dark" ? plusAiWhite : plusAiBlack}
                   alt="+AI"
                   className="h-4 w-auto object-contain"
                   priority

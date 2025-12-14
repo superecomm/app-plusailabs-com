@@ -1173,7 +1173,7 @@ export function NeuralBox({
                     <article
                       className={`${
                         isUser
-                          ? "rounded-[5px] bg-gray-800 text-white px-5 py-3"
+                          ? "rounded-[5px] bg-gray-700 text-white px-5 py-3"
                           : "text-gray-900"
                       }`}
                     >
