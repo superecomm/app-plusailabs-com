@@ -784,16 +784,14 @@ export function NeuralBox({
     const trimmedInput = value.trim();
     setLastPrompt(trimmedInput);
     
-    // Save user message with vault refs FIRST
+    // Clear input IMMEDIATELY for instant UX feedback
+    setTextInput("");
+    
+    // Save user message with vault refs
     await appendMessageToConversation("user", trimmedInput, { 
       avatarType: "user",
       vaultRefs: vaultRefs.length > 0 ? vaultRefs : undefined,
     });
-    
-    // Clear input after message is saved
-    if (typeof overrideText !== "string") {
-      setTextInput("");
-    }
 
     dispatchExec({ type: 'BEGIN_ROUTING' });
     dispatchExec({ type: 'BEGIN_PREFLIGHT' });
