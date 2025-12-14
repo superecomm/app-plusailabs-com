@@ -413,15 +413,21 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
               </div>
 
               <div className="flex-1 flex justify-center">
-                <div className="inline-flex items-center gap-3 text-sm font-semibold text-gray-900">
+                <div className={`inline-flex items-center gap-3 text-sm font-semibold ${
+                  theme === "dark" ? "text-white" : "text-gray-900"
+                }`}>
                   <button
                     type="button"
                     aria-pressed={viewMode === "chat"}
                     onClick={() => setViewMode("chat")}
                     className={`pb-1 transition ${
                       viewMode === "chat"
-                        ? "text-gray-900 border-b-2 border-gray-900"
-                        : "text-gray-500"
+                        ? theme === "dark" 
+                          ? "text-white border-b-2 border-white" 
+                          : "text-gray-900 border-b-2 border-gray-900"
+                        : theme === "dark"
+                          ? "text-gray-400"
+                          : "text-gray-500"
                     }`}
                   >
                     Chat
@@ -435,8 +441,12 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
                     }}
                     className={`pb-1 transition ${
                       viewMode === "explore"
-                        ? "text-gray-900 border-b-2 border-gray-900"
-                        : "text-gray-500"
+                        ? theme === "dark"
+                          ? "text-white border-b-2 border-white"
+                          : "text-gray-900 border-b-2 border-gray-900"
+                        : theme === "dark"
+                          ? "text-gray-400"
+                          : "text-gray-500"
                     }`}
                   >
                     Explore
