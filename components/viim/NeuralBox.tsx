@@ -339,6 +339,15 @@ export function NeuralBox({
   const firstTokenSeenRef = useRef(false);
   const streamBufferRef = useRef<string>("");
   const displayIntervalRef = useRef<number | null>(null);
+  
+  // Cleanup display interval on unmount
+  useEffect(() => {
+    return () => {
+      if (displayIntervalRef.current) {
+        clearInterval(displayIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Press-and-hold voice gesture (independent of text mode)
   const [voiceGestureState, setVoiceGestureState] = useState<VoiceGestureState>("idle");
@@ -1346,7 +1355,7 @@ export function NeuralBox({
             })}
 
             {/* Streaming Bubble - smooth typewriter display */}
-            {displayedContent && (
+            {(displayedContent || streamingContent) && (
                  <div className={`flex w-full justify-start py-5 px-3 ${
                    theme === "light" ? "bg-gray-50/60" : ""
                  }`}>
@@ -1358,6 +1367,10 @@ export function NeuralBox({
                                theme === "dark" ? "text-white" : "text-gray-900"
                              }`}>
                                 {displayedContent}
+                                {/* Cursor blink at end while typing */}
+                                {displayedContent && displayedContent.length < streamBufferRef.current.length && (
+                                  <span className="inline-block w-0.5 h-4 bg-current animate-pulse ml-0.5"></span>
+                                )}
                              </div>
                         </article>
                      </div>
