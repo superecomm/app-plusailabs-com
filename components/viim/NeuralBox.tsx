@@ -332,12 +332,13 @@ export function NeuralBox({
 
   // Streaming State
   const [streamingContent, setStreamingContent] = useState("");
+  const [displayedContent, setDisplayedContent] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const [assistantStatusText, setAssistantStatusText] = useState<string | null>(null);
   const lastTokenAtRef = useRef<number | null>(null);
   const firstTokenSeenRef = useRef(false);
-  const tokenQueueRef = useRef<string[]>([]);
-  const isProcessingTokenRef = useRef(false);
+  const streamBufferRef = useRef<string>("");
+  const displayIntervalRef = useRef<number | null>(null);
 
   // Press-and-hold voice gesture (independent of text mode)
   const [voiceGestureState, setVoiceGestureState] = useState<VoiceGestureState>("idle");
@@ -496,22 +497,48 @@ export function NeuralBox({
     setAbortController(abortController);
 
     setStreamingContent("");
-    tokenQueueRef.current = [];
-    isProcessingTokenRef.current = false;
-    setState("speaking"); // Use speaking state to indicate streaming
+    setDisplayedContent("");
+    streamBufferRef.current = "";
+    
+    // Clear any existing display interval
+    if (displayIntervalRef.current) {
+      clearInterval(displayIntervalRef.current);
+      displayIntervalRef.current = null;
+    }
+    
+    setState("speaking");
     dispatchExec({ type: 'START_STREAMING' });
     setRequestId(reqId);
     markTokenActivity();
     firstTokenSeenRef.current = false;
     lastTokenAtRef.current = Date.now();
     setAssistantStatusText(thinkingMessages[thinkingIndex] || "Analyzing…");
+    
+    // Start smooth display interval
+    displayIntervalRef.current = window.setInterval(() => {
+      setDisplayedContent(prev => {
+        const buffer = streamBufferRef.current;
+        if (prev.length >= buffer.length) return prev;
+        
+        // Display character by character for smooth typewriter effect
+        const nextChar = buffer[prev.length];
+        const newContent = prev + nextChar;
+        
+        // Check if we just added punctuation for natural pause
+        if (/[.!?]\s*$/.test(newContent)) {
+          // Slight pause after punctuation (handled by interval timing)
+        }
+        
+        return newContent;
+      });
+    }, 40); // 40ms per character = smooth, deliberate pace
 
     try {
         const onToken = (token: string) => {
             if (!firstTokenSeenRef.current) {
               firstTokenSeenRef.current = true;
-              // Hide narrative status immediately on first token
-              setAssistantStatusText(null);
+              // Brief pause before showing first character (deliberate feel)
+              setTimeout(() => setAssistantStatusText(null), 150);
             }
             
             lastTokenAtRef.current = Date.now();
@@ -521,8 +548,9 @@ export function NeuralBox({
             const estimated = estimateTokenCount(token);
             dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
             
-            // Update streaming content immediately - smooth, no chunking
-            setStreamingContent((prev) => prev + token);
+            // Add to buffer for controlled display
+            streamBufferRef.current += token;
+            setStreamingContent(streamBufferRef.current);
         };
         
         const options = {
@@ -581,7 +609,20 @@ export function NeuralBox({
         console.error("LLM Error:", error);
         dispatchExec({ type: 'FAIL', error: String(error) });
     } finally {
+        // Clear display interval
+        if (displayIntervalRef.current) {
+          clearInterval(displayIntervalRef.current);
+          displayIntervalRef.current = null;
+        }
+        
+        // Show any remaining buffered content immediately
+        if (streamBufferRef.current && displayedContent !== streamBufferRef.current) {
+          setDisplayedContent(streamBufferRef.current);
+        }
+        
         setStreamingContent("");
+        setDisplayedContent("");
+        streamBufferRef.current = "";
         setAssistantStatusText(null);
         firstTokenSeenRef.current = false;
         lastTokenAtRef.current = null;
@@ -1294,8 +1335,8 @@ export function NeuralBox({
               );
             })}
 
-            {/* Streaming Bubble - with typewriter animation */}
-            {streamingContent && (
+            {/* Streaming Bubble - smooth typewriter display */}
+            {displayedContent && (
                  <div className={`flex w-full justify-start py-5 px-3 ${
                    theme === "light" ? "bg-gray-50/60" : ""
                  }`}>
@@ -1303,16 +1344,10 @@ export function NeuralBox({
                         <article className={`bg-transparent px-2 ${
                           theme === "dark" ? "text-white" : "text-gray-900"
                         }`}>
-                             <div className={`space-y-3 text-[15px] leading-7 ${
+                             <div className={`space-y-3 text-[15px] leading-7 whitespace-pre-wrap ${
                                theme === "dark" ? "text-white" : "text-gray-900"
                              }`}>
-                                <AnimatedContent 
-                                  text={streamingContent} 
-                                  isUser={false} 
-                                  messageId="streaming" 
-                                  animate={true} 
-                                  stopSignal={stopPrintSignal} 
-                                />
+                                {displayedContent}
                              </div>
                         </article>
                      </div>
