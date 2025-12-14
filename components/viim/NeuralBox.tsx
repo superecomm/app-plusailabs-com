@@ -609,34 +609,44 @@ export function NeuralBox({
         console.error("LLM Error:", error);
         dispatchExec({ type: 'FAIL', error: String(error) });
     } finally {
-        // Clear display interval
-        if (displayIntervalRef.current) {
-          clearInterval(displayIntervalRef.current);
-          displayIntervalRef.current = null;
-        }
+        // Wait for display to catch up with buffer before cleaning up
+        const finishDisplaying = async () => {
+          // Show remaining content immediately (soft finality)
+          const finalContent = streamBufferRef.current;
+          if (finalContent) {
+            setDisplayedContent(finalContent);
+          }
+          
+          // Wait a moment for final render
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Clear display interval
+          if (displayIntervalRef.current) {
+            clearInterval(displayIntervalRef.current);
+            displayIntervalRef.current = null;
+          }
+          
+          setStreamingContent("");
+          setDisplayedContent("");
+          streamBufferRef.current = "";
+          setAssistantStatusText(null);
+          firstTokenSeenRef.current = false;
+          lastTokenAtRef.current = null;
+          setRequestId(null);
+          
+          if (limitReached) {
+              dispatchExec({ type: 'HIT_LIMIT' });
+          } else {
+              dispatchExec({ type: 'COMPLETE' });
+          }
+          if (!limitReached) {
+              setState("idle");
+          }
+          setIsProcessingInput(false);
+          abortControllerRef.current = null;
+        };
         
-        // Show any remaining buffered content immediately
-        if (streamBufferRef.current && displayedContent !== streamBufferRef.current) {
-          setDisplayedContent(streamBufferRef.current);
-        }
-        
-        setStreamingContent("");
-        setDisplayedContent("");
-        streamBufferRef.current = "";
-        setAssistantStatusText(null);
-        firstTokenSeenRef.current = false;
-        lastTokenAtRef.current = null;
-        setRequestId(null);
-        if (limitReached) {
-            dispatchExec({ type: 'HIT_LIMIT' });
-        } else {
-            dispatchExec({ type: 'COMPLETE' });
-        }
-        if (!limitReached) {
-            setState("idle");
-        }
-        setIsProcessingInput(false);
-        abortControllerRef.current = null;
+        finishDisplaying();
     }
   };
 
