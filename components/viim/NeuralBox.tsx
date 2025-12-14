@@ -159,40 +159,39 @@ const AnimatedContent = ({
     console.warn('[AnimatedContent] User message has no content:', { text, isUser, messageId });
   }
 
+  // Get text color - assistant text inherits from parent
+  const textColor = isUser ? "text-white" : "inherit";
+  
   return (
     <div className="relative chat-response">
       <ReactMarkdown
         components={{
           p: ({ node, ...props }) => (
             <p 
-              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
-                isUser ? "text-white" : "text-gray-900"
-              }`} 
+              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${textColor}`} 
               {...props} 
             />
           ),
           li: ({ node, ...props }) => (
             <li 
-              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
-                isUser ? "text-white" : "text-gray-900"
-              }`} 
+              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${textColor}`} 
               {...props} 
             />
           ),
           ul: ({ node, ...props }) => (
-            <ul className={`mb-2.5 pl-5 list-disc ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            <ul className={`mb-2.5 pl-5 list-disc ${textColor}`} {...props} />
           ),
           ol: ({ node, ...props }) => (
-            <ol className={`mb-2.5 pl-5 list-decimal ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            <ol className={`mb-2.5 pl-5 list-decimal ${textColor}`} {...props} />
           ),
           h1: ({ node, ...props }) => (
-            <h1 className={`mt-4 mb-1.5 text-xl font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            <h1 className={`mt-4 mb-1.5 text-xl font-bold leading-[1.25] ${textColor}`} {...props} />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className={`mt-4 mb-1.5 text-lg font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            <h2 className={`mt-4 mb-1.5 text-lg font-bold leading-[1.25] ${textColor}`} {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className={`mt-4 mb-1.5 text-base font-bold leading-[1.25] ${isUser ? "text-white" : "text-gray-900"}`} {...props} />
+            <h3 className={`mt-4 mb-1.5 text-base font-bold leading-[1.25] ${textColor}`} {...props} />
           ),
           code: ({ node, className, ...props }: any) => {
             const isInline = !className?.includes('language-');
@@ -1184,7 +1183,9 @@ export function NeuralBox({
                       }`}>
                         {isAssistant && isCollapsed && preview ? (
                           <div className="relative">
-                            <div className="whitespace-pre-wrap text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] text-gray-900">
+                            <div className={`whitespace-pre-wrap text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${
+                              theme === "dark" ? "text-white" : "text-gray-900"
+                            }`}>
                               {preview.head}
                               {!preview.headHasTail && preview.tail && (
                                 <>
@@ -1193,7 +1194,9 @@ export function NeuralBox({
                                 </>
                               )}
                             </div>
-                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-gray-50 to-transparent" />
+                            {theme === "light" && (
+                              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-gray-50 to-transparent" />
+                            )}
                           </div>
                         ) : (
                           <div
