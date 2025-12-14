@@ -12,6 +12,7 @@ interface VIIMAnimationProps {
   recordingCountdown?: number; // 3, 2, 1, or 0 (0 means recording in progress)
   recordingTime?: number; // elapsed seconds during recording
   audioStream?: MediaStream | null; // For real audio reactivity
+  particleColor?: "light" | "dark"; // light = white particles, dark = black particles
 }
 
 export default function VIIMAnimation({ 
@@ -23,7 +24,8 @@ export default function VIIMAnimation({
   visualStyle = "particles",
   recordingCountdown = undefined,
   recordingTime = 0,
-  audioStream = null
+  audioStream = null,
+  particleColor = "light"
 }: VIIMAnimationProps) {
   const [bars, setBars] = useState<number[]>([]);
   const [waveData, setWaveData] = useState<number[]>([]);

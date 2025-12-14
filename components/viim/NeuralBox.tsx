@@ -1600,6 +1600,7 @@ export function NeuralBox({
                             container="square"
                             visualStyle="particles"
                             audioStream={getAudioStream()}
+                            particleColor="dark"
                           />
                         </div>
                         <span className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${
