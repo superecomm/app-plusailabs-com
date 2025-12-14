@@ -1593,9 +1593,7 @@ export function NeuralBox({
                    </>
                 ) : (
                     <>
-                        <div className={`relative flex h-8 w-8 items-center justify-center rounded-full shadow-lg ${
-                          theme === "dark" ? "bg-white" : "bg-black"
-                        }`}>
+                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full shadow-lg bg-white">
                           <VIIMAnimation
                             state={state}
                             size="xxs"
@@ -1604,7 +1602,9 @@ export function NeuralBox({
                             audioStream={getAudioStream()}
                           />
                         </div>
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+                        <span className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                          theme === "dark" ? "text-gray-400" : "text-gray-500"
+                        }`}>
                           Send
                         </span>
                     </>
