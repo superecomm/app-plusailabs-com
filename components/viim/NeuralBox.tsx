@@ -1165,7 +1165,7 @@ export function NeuralBox({
               return (
                 <div
                   key={entry.id}
-                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser ? "bg-gray-50/60" : ""} py-5 px-3`}
+                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser && theme === "light" ? "bg-gray-50/60" : ""} py-5 px-3`}
                 >
                   <div
                     className={`flex flex-col gap-3 ${
@@ -1219,7 +1219,11 @@ export function NeuralBox({
                       </div>
                     </article>
                     {!isUser && (
-                      <div className="flex flex-row flex-nowrap items-center gap-1 text-gray-400 overflow-x-auto pb-2 border-b border-gray-200">
+                      <div className={`flex flex-row flex-nowrap items-center gap-1 overflow-x-auto pb-2 ${
+                        theme === "dark" 
+                          ? "text-gray-500 border-b border-gray-800"
+                          : "text-gray-400 border-b border-gray-200"
+                      }`}>
                         <button className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-900 flex-shrink-0" aria-label="Copy">
                           <Clipboard className="h-3.5 w-3.5" />
                         </button>
@@ -1289,10 +1293,16 @@ export function NeuralBox({
 
             {/* Streaming Bubble - with typewriter animation */}
             {streamingContent && (
-                 <div className="flex w-full justify-start bg-gray-50/60 py-5 px-3">
+                 <div className={`flex w-full justify-start py-5 px-3 ${
+                   theme === "light" ? "bg-gray-50/60" : ""
+                 }`}>
                      <div className="flex flex-col gap-3 w-full max-w-4xl">
-                        <article className="bg-transparent text-gray-900 px-2">
-                             <div className="space-y-3 text-[15px] leading-7 text-gray-900">
+                        <article className={`bg-transparent px-2 ${
+                          theme === "dark" ? "text-white" : "text-gray-900"
+                        }`}>
+                             <div className={`space-y-3 text-[15px] leading-7 ${
+                               theme === "dark" ? "text-white" : "text-gray-900"
+                             }`}>
                                 <AnimatedContent 
                                   text={streamingContent} 
                                   isUser={false} 
@@ -1370,7 +1380,11 @@ export function NeuralBox({
       {showInputPanel && (
         <div
           ref={inputContainerRef}
-          className={`pointer-events-auto fixed bottom-0 left-0 right-0 z-20 border-t border-white/50 bg-white/90 px-3 py-3 backdrop-blur transition-all duration-300 ${
+          className={`pointer-events-auto fixed bottom-0 left-0 right-0 z-20 border-t px-3 py-3 backdrop-blur transition-all duration-300 ${
+            theme === "dark"
+              ? "border-gray-800 bg-black/90"
+              : "border-white/50 bg-white/90"
+          } ${
             promptVisible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"
           } ${blurInput ? "filter blur-sm" : ""} ${disableInteractions ? "pointer-events-none select-none" : ""}`}
         >
