@@ -417,8 +417,18 @@ export function NeuralBox({
   }, [availableModels, modelQuery]);
   const currentModel = getModelById(selectedModel) || availableModels[0];
 
-  // Audio recording setup
-  const { isRecording, startRecording, stopRecording, getAudioStream } = useVIIMRecorder({
+  // Audio recording setup - ONLY initialize if we might use voice
+  // This prevents microphone permission prompts on mobile when just browsing
+  const shouldEnableVoice = variant === "capture"; // Only enable for capture variant, not assistant
+  
+  const recorderFallback = {
+    isRecording: false,
+    startRecording: async () => { console.warn("Voice not enabled in this mode"); },
+    stopRecording: () => {},
+    getAudioStream: () => null,
+  };
+  
+  const recorderActive = useVIIMRecorder({
     audioDeviceId,
     onStreamReady: (stream) => {
       if (stream) {
@@ -493,6 +503,9 @@ export function NeuralBox({
       setVoiceGestureState("idle");
     },
   });
+  
+  // Use fallback if voice not enabled, otherwise use active recorder
+  const { isRecording, startRecording, stopRecording, getAudioStream } = shouldEnableVoice ? recorderActive : recorderFallback;
 
   // Unified LLM Request Handler with Streaming
   const handleLLMRequest = async (modelId: string, text: string, reqId: string) => {

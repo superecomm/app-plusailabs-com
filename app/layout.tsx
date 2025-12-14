@@ -40,8 +40,15 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "https://www.plusailabs.com/",
   },
+  manifest: "/manifest.json",
   icons: {
     icon: "/favicon.png",
+    apple: "/icon-192.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "+AI",
   },
   openGraph: {
     type: "website",
@@ -117,12 +124,40 @@ export default function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <meta name="application-name" content="+AI" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="+AI" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#000000" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        {/* Service Worker Registration */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(
+                    function(registration) {
+                      console.log('ServiceWorker registered:', registration.scope);
+                    },
+                    function(err) {
+                      console.log('ServiceWorker registration failed:', err);
+                    }
+                  );
+                });
+              }
+            `,
+          }}
         />
         <AuthProvider>
           {children}
