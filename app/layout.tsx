@@ -123,7 +123,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en">
+    <html lang="en" className="h-full">
       <head>
         <meta name="application-name" content="+AI" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -134,7 +134,8 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
+        style={{ position: 'fixed', width: '100%', overflow: 'hidden' }}
       >
         <script
           type="application/ld+json"
@@ -154,6 +155,15 @@ export default function RootLayout({
                       console.log('ServiceWorker registration failed:', err);
                     }
                   );
+                  
+                  // Listen for SW activation messages
+                  navigator.serviceWorker.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'SW_ACTIVATED') {
+                      console.log('[SW] Activated:', event.data.cacheVersion);
+                      localStorage.setItem('pwa_last_sw_update', event.data.timestamp);
+                      localStorage.setItem('pwa_cache_version', event.data.cacheVersion);
+                    }
+                  });
                 });
               }
             `,

@@ -18,6 +18,12 @@ export type LLMErrorCategory =
   | "NETWORK_ERROR"
   | "UNKNOWN_ERROR";
 
+export interface ErrorBannerConfig {
+  message: string;
+  shouldQueue: boolean;
+  retryDelay?: number;
+}
+
 function classifyError(status: number, message: string): LLMErrorCategory {
   if (status === 429) return "RATE_LIMITED";
   if (status === 503) return "MODEL_OVERLOADED";
@@ -25,6 +31,84 @@ function classifyError(status: number, message: string): LLMErrorCategory {
   if (status >= 500) return "MODEL_UNAVAILABLE";
   if (message.toLowerCase().includes("network") || message.toLowerCase().includes("fetch")) return "NETWORK_ERROR";
   return "UNKNOWN_ERROR";
+}
+
+/**
+ * Get user-friendly error message for a given error category
+ */
+export function getUserFriendlyErrorMessage(category: LLMErrorCategory, provider?: string): string {
+  const providerName = provider || "Provider";
+  
+  switch (category) {
+    case "MODEL_OVERLOADED":
+      return `High traffic on ${providerName}. Try again in a few minutes.`;
+    
+    case "RATE_LIMITED":
+      return "Rate limit hit. Retry in 30s or switch models.";
+    
+    case "MODEL_TIMEOUT":
+      return "Request timed out. This model may be slow right now.";
+    
+    case "MODEL_UNAVAILABLE":
+      return "This model is temporarily unavailable.";
+    
+    case "NETWORK_ERROR":
+      return "Connection issue. Check your network.";
+    
+    case "UNKNOWN_ERROR":
+    default:
+      return "Something went wrong. Please try again.";
+  }
+}
+
+/**
+ * Get configuration for how to handle different error types
+ */
+export function getErrorBannerConfig(category: LLMErrorCategory): ErrorBannerConfig {
+  switch (category) {
+    case "NETWORK_ERROR":
+      return {
+        message: getUserFriendlyErrorMessage(category),
+        shouldQueue: true, // Queue messages on network errors
+        retryDelay: 0,
+      };
+    
+    case "RATE_LIMITED":
+      return {
+        message: getUserFriendlyErrorMessage(category),
+        shouldQueue: false,
+        retryDelay: 30000, // 30 seconds
+      };
+    
+    case "MODEL_OVERLOADED":
+      return {
+        message: getUserFriendlyErrorMessage(category),
+        shouldQueue: false,
+        retryDelay: 60000, // 60 seconds
+      };
+    
+    case "MODEL_TIMEOUT":
+      return {
+        message: getUserFriendlyErrorMessage(category),
+        shouldQueue: false,
+        retryDelay: 10000, // 10 seconds
+      };
+    
+    case "MODEL_UNAVAILABLE":
+      return {
+        message: getUserFriendlyErrorMessage(category),
+        shouldQueue: false,
+        retryDelay: 120000, // 2 minutes
+      };
+    
+    case "UNKNOWN_ERROR":
+    default:
+      return {
+        message: getUserFriendlyErrorMessage(category),
+        shouldQueue: false,
+        retryDelay: 5000, // 5 seconds
+      };
+  }
 }
 
 async function callLLMEndpoint(

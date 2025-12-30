@@ -532,7 +532,56 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             sawServerSnapshot = true;
           }
 
-          setConversationHistory(messages);
+          // Merge Firestore messages with any optimistic updates
+          // This prevents optimistic messages from disappearing when Firestore syncs
+          setConversationHistory((prev) => {
+            // Create a set of Firestore message IDs and content+timestamp pairs for deduplication
+            const firestoreIds = new Set(messages.map(m => m.id));
+            const firestoreContentKeys = new Set(
+              messages.map(m => `${m.content}-${Math.floor(m.timestamp / 1000)}`)
+            );
+
+            // Start with Firestore messages (source of truth)
+            const merged: ConversationMessage[] = [...messages];
+
+            // Add optimistic messages that aren't in Firestore yet
+            prev.forEach((optimisticMsg) => {
+              // Skip if already in Firestore (by ID or content+timestamp)
+              const contentKey = `${optimisticMsg.content}-${Math.floor(optimisticMsg.timestamp / 1000)}`;
+              const isInFirestore = firestoreIds.has(optimisticMsg.id) || firestoreContentKeys.has(contentKey);
+              
+              if (!isInFirestore) {
+                // Only keep optimistic messages for current conversation (or with no conversationId set yet)
+                const isForCurrentConversation = 
+                  optimisticMsg.conversationId === currentConversationId || 
+                  !optimisticMsg.conversationId ||
+                  optimisticMsg.conversationId === "";
+                
+                if (isForCurrentConversation) {
+                  // Check if we already added this message to merged array
+                  const alreadyAdded = merged.some(
+                    m => m.id === optimisticMsg.id || 
+                    (m.content === optimisticMsg.content && Math.abs(m.timestamp - optimisticMsg.timestamp) < 2000)
+                  );
+                  
+                  if (!alreadyAdded) {
+                    // Update conversationId if it was empty/null
+                    const updatedMsg: ConversationMessage = {
+                      ...optimisticMsg,
+                      conversationId: currentConversationId,
+                    };
+                    merged.push(updatedMsg);
+                  }
+                }
+              }
+            });
+
+            // Sort by timestamp to maintain chronological order
+            merged.sort((a, b) => a.timestamp - b.timestamp);
+
+            return merged;
+          });
+          
           cacheConversationMessages(currentUser.uid, currentConversationId, messages);
         },
         (error) => {

@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user owns the resource
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Avatar uploads (user-owned)
+    match /avatars/{userId}/{fileName} {
+      allow read: if true; // Public read
+      allow write: if isOwner(userId);
+    }
+
+    // Cover photo uploads (user-owned)
+    match /covers/{userId}/{fileName} {
+      allow read: if true; // Public read
+      allow write: if isOwner(userId);
+    }
+
+    // Vault storage (user-owned, private)
+    match /vault/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Public content media (user-owned)
+    match /content/{userId}/{fileName} {
+      allow read: if true; // Public read
+      allow write: if isOwner(userId);
+    }
+  }
+}
+

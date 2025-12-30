@@ -11,8 +11,30 @@ export interface UserProfile extends BaseDocument {
   email: string;
   displayName?: string;
   photoURL?: string;
+  coverPhotoURL?: string;
+  bio?: string;
+  handle?: string;
   phoneNumber?: string;
   providerId?: string;
+  // Handle change tracking
+  handleChangeHistory?: Array<{
+    oldHandle: string;
+    newHandle: string;
+    changedAt: Timestamp | Date;
+  }>;
+  // Public profile settings
+  isPublic?: boolean;
+  publicFields?: {
+    showEmail?: boolean;
+    showStats?: boolean;
+    showContent?: boolean;
+  };
+  // Stats for public display
+  stats?: {
+    conversations?: number;
+    posts?: number;
+    saved?: number;
+  };
   // System metadata
   lastLoginAt?: Timestamp;
   isEmailVerified?: boolean;

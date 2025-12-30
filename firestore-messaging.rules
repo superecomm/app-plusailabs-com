@@ -1,0 +1,67 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isParticipant(threadData) {
+      return isAuthenticated() && 
+             request.auth.uid in threadData.participants;
+    }
+    
+    function isNotBlocked(threadData, senderId) {
+      // Check if sender is not in recipient's blocked list
+      // This is a simplified check - full implementation needs user doc lookup
+      return true;
+    }
+    
+    // Message Threads
+    match /messageThreads/{threadId} {
+      // Can read if you're a participant
+      allow read: if isAuthenticated() && 
+                     request.auth.uid in resource.data.participants;
+      
+      // Can create if you're setting yourself as participant
+      allow create: if isAuthenticated() && 
+                       request.auth.uid in request.resource.data.participants;
+      
+      // Can update if you're a participant (for lastReadAt, unreadCount)
+      allow update: if isAuthenticated() && 
+                       request.auth.uid in resource.data.participants;
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Can read if you're a thread participant
+        allow read: if isAuthenticated() && 
+                       request.auth.uid in get(/databases/$(database)/documents/messageThreads/$(threadId)).data.participants;
+        
+        // Can create if you're a participant and the sender
+        allow create: if isAuthenticated() && 
+                         request.auth.uid in get(/databases/$(database)/documents/messageThreads/$(threadId)).data.participants &&
+                         request.auth.uid == request.resource.data.senderId &&
+                         request.resource.data.text.size() > 0 &&
+                         request.resource.data.text.size() <= 5000; // Max 5000 chars
+        
+        // Can update/delete your own messages only
+        allow update, delete: if isAuthenticated() && 
+                                 request.auth.uid == resource.data.senderId;
+      }
+      
+      // Presence subcollection (for typing indicators)
+      match /presence/{userId} {
+        // Can read if you're a thread participant
+        allow read: if isAuthenticated() && 
+                       request.auth.uid in get(/databases/$(database)/documents/messageThreads/$(threadId)).data.participants;
+        
+        // Can write your own presence only
+        allow write: if isAuthenticated() && 
+                        request.auth.uid == userId;
+      }
+    }
+  }
+}
+

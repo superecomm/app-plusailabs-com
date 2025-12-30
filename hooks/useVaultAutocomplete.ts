@@ -1,3 +1,11 @@
+/**
+ * @deprecated Use usePlusMentionAutocomplete instead
+ * This file is kept for backwards compatibility but will be removed in a future version.
+ * 
+ * Plus mention (+) is a prompt-native invocation operator for intelligence.
+ * At mention (@) is a social mention system for people and messaging.
+ */
+
 "use client";
 
 import { useState, useEffect, useCallback, RefObject } from "react";
@@ -27,6 +35,9 @@ interface UseVaultAutocompleteReturn {
   onKeyDown: (e: React.KeyboardEvent) => void;
 }
 
+/**
+ * @deprecated Use usePlusMentionAutocomplete from @/hooks/usePlusMentionAutocomplete
+ */
 export function useVaultAutocomplete(
   textareaRef: RefObject<HTMLTextAreaElement | null>,
   onInsertToken: (token: string, item: VaultItem) => void

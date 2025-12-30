@@ -7,9 +7,9 @@ import { useChat, estimateTokenCount, detectSemanticStop, getCharBudget } from "
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
 import { StallActionsBar } from "@/components/StallActionsBar";
-import { VaultAutocomplete } from "@/components/vault/VaultAutocomplete";
+import { PlusMentionAutocomplete } from "@/components/vault/PlusMentionAutocomplete";
 import { ContextSourcesBar } from "@/components/vault/ContextSourcesBar";
-import { useVaultAutocomplete } from "@/hooks/useVaultAutocomplete";
+import { usePlusMentionAutocomplete } from "@/hooks/usePlusMentionAutocomplete";
 import { resolveVaultContext, buildPromptWithVault } from "@/lib/vaultPolicyClient";
 import type { VaultRef } from "@/types/conversation";
 import type { ChatState } from "@/contexts/ChatContext";
@@ -168,37 +168,38 @@ const AnimatedContent = ({
         components={{
           p: ({ node, ...props }) => (
             <p 
-              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${textColor}`} 
+              className={`whitespace-pre-wrap mb-1 sm:mb-1.5 text-[15px] sm:text-[16px] leading-[1.5] sm:leading-[1.6] ${textColor}`} 
               {...props} 
             />
           ),
           li: ({ node, ...props }) => (
             <li 
-              className={`whitespace-pre-wrap mb-2 text-[15px] sm:text-[16px] leading-[1.4] sm:leading-[1.45] ${textColor}`} 
+              className={`whitespace-pre-wrap mb-0.5 sm:mb-1 text-[15px] sm:text-[16px] leading-[1.5] sm:leading-[1.6] ${textColor}`}
+              style={{ display: 'list-item', listStylePosition: 'outside' }}
               {...props} 
             />
           ),
           ul: ({ node, ...props }) => (
-            <ul className={`mb-2.5 pl-5 list-disc ${textColor}`} {...props} />
+            <ul className={`mb-1.5 sm:mb-2 pl-4 sm:pl-5 list-disc space-y-0.5 ${textColor}`} style={{ listStylePosition: 'outside' }} {...props} />
           ),
           ol: ({ node, ...props }) => (
-            <ol className={`mb-2.5 pl-5 list-decimal ${textColor}`} {...props} />
+            <ol className={`mb-1.5 sm:mb-2 pl-5 sm:pl-6 list-decimal space-y-0.5 ${textColor}`} style={{ listStylePosition: 'outside' }} {...props} />
           ),
           h1: ({ node, ...props }) => (
-            <h1 className={`mt-4 mb-1.5 text-xl font-bold leading-[1.25] ${textColor}`} {...props} />
+            <h1 className={`mt-3 sm:mt-4 mb-1 sm:mb-1.5 text-xl font-bold leading-[1.3] sm:leading-[1.25] ${textColor}`} {...props} />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className={`mt-4 mb-1.5 text-lg font-bold leading-[1.25] ${textColor}`} {...props} />
+            <h2 className={`mt-2.5 sm:mt-3 mb-1 sm:mb-1.5 text-lg font-bold leading-[1.3] sm:leading-[1.25] ${textColor}`} {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className={`mt-4 mb-1.5 text-base font-bold leading-[1.25] ${textColor}`} {...props} />
+            <h3 className={`mt-2 sm:mt-2.5 mb-0.5 sm:mb-1 text-base font-bold leading-[1.3] sm:leading-[1.25] ${textColor}`} {...props} />
           ),
           code: ({ node, className, ...props }: any) => {
             const isInline = !className?.includes('language-');
             return isInline ? (
               <code className="bg-gray-100 text-gray-900 px-1.5 py-0.5 rounded text-sm font-mono" {...props} />
             ) : (
-              <code className="block bg-gray-900 text-gray-100 px-4 py-3 rounded-lg text-sm font-mono overflow-x-auto my-2" {...props} />
+              <code className="block bg-gray-900 text-gray-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm font-mono overflow-x-auto my-1.5 sm:my-2" {...props} />
             );
           },
         }}
@@ -298,8 +299,8 @@ export function NeuralBox({
   const [hasActivatedOnce, setHasActivatedOnce] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
-  // Vault autocomplete hook
-  const autocomplete = useVaultAutocomplete(textareaRef, (token, item) => {
+  // Plus mention (+) autocomplete hook
+  const plusMention = usePlusMentionAutocomplete(textareaRef, (token, item) => {
     // Add vault ref when token is inserted
     const newRef: VaultRef = {
       id: item.id,
@@ -332,22 +333,18 @@ export function NeuralBox({
 
   // Streaming State
   const [streamingContent, setStreamingContent] = useState("");
-  const [displayedContent, setDisplayedContent] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const [assistantStatusText, setAssistantStatusText] = useState<string | null>(null);
   const lastTokenAtRef = useRef<number | null>(null);
   const firstTokenSeenRef = useRef(false);
-  const streamBufferRef = useRef<string>("");
-  const displayIntervalRef = useRef<number | null>(null);
+  const processingRequestIdsRef = useRef<Set<string>>(new Set());
+  const finalizedMessageIdsRef = useRef<Set<string>>(new Set());
   
-  // Cleanup display interval on unmount
+  // Clear processing and finalized IDs when conversation changes
   useEffect(() => {
-    return () => {
-      if (displayIntervalRef.current) {
-        clearInterval(displayIntervalRef.current);
-      }
-    };
-  }, []);
+    processingRequestIdsRef.current.clear();
+    finalizedMessageIdsRef.current.clear();
+  }, [currentConversationId]);
 
   // Press-and-hold voice gesture (independent of text mode)
   const [voiceGestureState, setVoiceGestureState] = useState<VoiceGestureState>("idle");
@@ -511,6 +508,15 @@ export function NeuralBox({
   const handleLLMRequest = async (modelId: string, text: string, reqId: string) => {
     if (limitReached) return;
 
+    // Deduplication: prevent duplicate requests
+    if (processingRequestIdsRef.current.has(reqId)) {
+      console.log('[NeuralBox] Duplicate request detected, skipping:', reqId);
+      return;
+    }
+    
+    // Add to processing set
+    processingRequestIdsRef.current.add(reqId);
+
     if (abortControllerRef.current) {
         abortControllerRef.current.abort();
     }
@@ -519,14 +525,6 @@ export function NeuralBox({
     setAbortController(abortController);
 
     setStreamingContent("");
-    setDisplayedContent("");
-    streamBufferRef.current = "";
-    
-    // Clear any existing display interval
-    if (displayIntervalRef.current) {
-      clearInterval(displayIntervalRef.current);
-      displayIntervalRef.current = null;
-    }
     
     setState("speaking");
     dispatchExec({ type: 'START_STREAMING' });
@@ -535,31 +533,13 @@ export function NeuralBox({
     firstTokenSeenRef.current = false;
     lastTokenAtRef.current = Date.now();
     setAssistantStatusText(thinkingMessages[thinkingIndex] || "Analyzing…");
-    
-    // Start smooth display interval with adaptive pacing
-    displayIntervalRef.current = window.setInterval(() => {
-      setDisplayedContent(prev => {
-        const buffer = streamBufferRef.current;
-        if (prev.length >= buffer.length) return prev;
-        
-        const progress = prev.length / Math.max(buffer.length, 1);
-        
-        // Display 1-3 characters per tick based on progress
-        // First 50%: character by character (slow and smooth)
-        // After 50%: 2-3 chars per tick (catch up faster)
-        const charsToAdd = progress < 0.5 ? 1 : progress < 0.8 ? 2 : 3;
-        
-        const nextChars = buffer.slice(prev.length, prev.length + charsToAdd);
-        return prev + nextChars;
-      });
-    }, 35); // 35ms interval = smooth pacing
 
     try {
         const onToken = (token: string) => {
             if (!firstTokenSeenRef.current) {
               firstTokenSeenRef.current = true;
-              // Brief pause before showing first character (deliberate feel)
-              setTimeout(() => setAssistantStatusText(null), 150);
+              // Clear status text immediately when first token arrives
+              setAssistantStatusText(null);
             }
             
             lastTokenAtRef.current = Date.now();
@@ -569,9 +549,8 @@ export function NeuralBox({
             const estimated = estimateTokenCount(token);
             dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
             
-            // Add to buffer for controlled display
-            streamBufferRef.current += token;
-            setStreamingContent(streamBufferRef.current);
+            // Update streaming content immediately (real-time display)
+            setStreamingContent(prev => prev + token);
         };
         
         const options = {
@@ -620,54 +599,42 @@ export function NeuralBox({
             }
         } else if (response.text) {
              setUsageWarning(null);
-             await appendMessageToConversation("assistant", response.text, {
-                avatarType: "neural",
-                model: modelId,
-             });
+             
+             // Finalization guard: only append if not already finalized
+             if (!finalizedMessageIdsRef.current.has(reqId)) {
+               await appendMessageToConversation("assistant", response.text, {
+                  avatarType: "neural",
+                  model: modelId,
+               });
+               finalizedMessageIdsRef.current.add(reqId);
+             }
+             
              onResponse?.(response.text);
         }
     } catch (error) {
         console.error("LLM Error:", error);
         dispatchExec({ type: 'FAIL', error: String(error) });
     } finally {
-        // Wait for display to catch up with buffer before cleaning up
-        const finishDisplaying = async () => {
-          // Show remaining content immediately (soft finality)
-          const finalContent = streamBufferRef.current;
-          if (finalContent) {
-            setDisplayedContent(finalContent);
-          }
-          
-          // Wait a moment for final render
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          // Clear display interval
-          if (displayIntervalRef.current) {
-            clearInterval(displayIntervalRef.current);
-            displayIntervalRef.current = null;
-          }
-          
-          setStreamingContent("");
-          setDisplayedContent("");
-          streamBufferRef.current = "";
-          setAssistantStatusText(null);
-          firstTokenSeenRef.current = false;
-          lastTokenAtRef.current = null;
-          setRequestId(null);
-          
-          if (limitReached) {
-              dispatchExec({ type: 'HIT_LIMIT' });
-          } else {
-              dispatchExec({ type: 'COMPLETE' });
-          }
-          if (!limitReached) {
-              setState("idle");
-          }
-          setIsProcessingInput(false);
-          abortControllerRef.current = null;
-        };
+        // Clean up immediately - no artificial delays
+        setStreamingContent("");
+        setAssistantStatusText(null);
+        firstTokenSeenRef.current = false;
+        lastTokenAtRef.current = null;
+        setRequestId(null);
         
-        finishDisplaying();
+        // Remove from processing set (deduplication cleanup)
+        processingRequestIdsRef.current.delete(reqId);
+        
+        if (limitReached) {
+            dispatchExec({ type: 'HIT_LIMIT' });
+        } else {
+            dispatchExec({ type: 'COMPLETE' });
+        }
+        if (!limitReached) {
+            setState("idle");
+        }
+        setIsProcessingInput(false);
+        abortControllerRef.current = null;
     }
   };
 
@@ -1214,7 +1181,7 @@ export function NeuralBox({
         className="chat-scroll-fade flex-1 overflow-y-auto px-3 pb-44 pt-6 sm:px-6"
         style={{ scrollbarGutter: "stable" }}
       >
-        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-3 sm:px-4">
+        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3 sm:gap-4 px-3 sm:px-4">
 
           {conversationHistory.length > 0 &&
             conversationHistory.map((entry) => {
@@ -1234,7 +1201,7 @@ export function NeuralBox({
               return (
                 <div
                   key={entry.id}
-                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser && theme === "light" ? "bg-gray-50/60" : ""} py-5 px-3`}
+                  className={`flex w-full ${isUser ? "justify-end" : "justify-start"} ${!isUser && theme === "light" ? "bg-gray-50/60" : ""} py-3 sm:py-4 px-3`}
                 >
                   <div
                     className={`flex flex-col gap-3 ${
@@ -1248,7 +1215,7 @@ export function NeuralBox({
                           : theme === "dark" ? "text-white" : "text-gray-900"
                       }`}
                     >
-                      <div className={`space-y-3 text-[15px] leading-7 ${
+                      <div className={`space-y-1.5 sm:space-y-2 text-[15px] leading-[1.5] sm:leading-[1.6] ${
                         isUser ? "text-white" : theme === "dark" ? "text-white" : "text-gray-900"
                       }`}>
                         {isAssistant && isCollapsed && preview ? (
@@ -1364,35 +1331,106 @@ export function NeuralBox({
               );
             })}
 
-            {/* Streaming Bubble - smooth typewriter display */}
-            {(displayedContent || streamingContent) && (
-                 <div className={`flex w-full justify-start py-5 px-3 ${
+            {/* Streaming Bubble - real-time display */}
+            {streamingContent && (
+                 <div className={`flex w-full justify-start py-3 sm:py-4 px-3 ${
                    theme === "light" ? "bg-gray-50/60" : ""
                  }`}>
-                     <div className="flex flex-col gap-3 w-full max-w-4xl">
+                     <div className="flex flex-col gap-2 sm:gap-3 w-full max-w-4xl">
                         <article className={`bg-transparent px-2 ${
                           theme === "dark" ? "text-white" : "text-gray-900"
                         }`}>
-                             <div className={`space-y-3 text-[15px] leading-7 whitespace-pre-wrap ${
+                             <div className={`space-y-1 sm:space-y-1.5 text-[15px] leading-[1.5] sm:leading-[1.6] whitespace-pre-wrap ${
                                theme === "dark" ? "text-white" : "text-gray-900"
                              }`}>
-                                {displayedContent}
-                                {/* Cursor blink at end while typing */}
-                                {displayedContent && displayedContent.length < streamBufferRef.current.length && (
-                                  <span className="inline-block w-0.5 h-4 bg-current animate-pulse ml-0.5"></span>
-                                )}
+                                <ReactMarkdown
+                                  components={{
+                                    p: ({ node, ...props }) => (
+                                      <p 
+                                        className={`whitespace-pre-wrap mb-1 sm:mb-1.5 text-[15px] sm:text-[16px] leading-[1.5] sm:leading-[1.6] ${
+                                          theme === "dark" ? "text-white" : "text-gray-900"
+                                        }`} 
+                                        {...props} 
+                                      />
+                                    ),
+                                    li: ({ node, ...props }) => (
+                                      <li 
+                                        className={`whitespace-pre-wrap mb-0.5 sm:mb-1 text-[15px] sm:text-[16px] leading-[1.5] sm:leading-[1.6] ${
+                                          theme === "dark" ? "text-white" : "text-gray-900"
+                                        }`}
+                                        style={{ display: 'list-item', listStylePosition: 'outside' }}
+                                        {...props} 
+                                      />
+                                    ),
+                                    ul: ({ node, ...props }) => (
+                                      <ul className={`mb-1.5 sm:mb-2 pl-4 sm:pl-5 list-disc space-y-0.5 ${
+                                        theme === "dark" ? "text-white" : "text-gray-900"
+                                      }`} style={{ listStylePosition: 'outside' }} {...props} />
+                                    ),
+                                    ol: ({ node, ...props }) => (
+                                      <ol className={`mb-1.5 sm:mb-2 pl-5 sm:pl-6 list-decimal space-y-0.5 ${
+                                        theme === "dark" ? "text-white" : "text-gray-900"
+                                      }`} style={{ listStylePosition: 'outside' }} {...props} />
+                                    ),
+                                    h1: ({ node, ...props }) => (
+                                      <h1 className={`mt-3 sm:mt-4 mb-1 sm:mb-1.5 text-xl font-bold leading-[1.3] sm:leading-[1.25] ${
+                                        theme === "dark" ? "text-white" : "text-gray-900"
+                                      }`} {...props} />
+                                    ),
+                                    h2: ({ node, ...props }) => (
+                                      <h2 className={`mt-2.5 sm:mt-3 mb-1 sm:mb-1.5 text-lg font-bold leading-[1.3] sm:leading-[1.25] ${
+                                        theme === "dark" ? "text-white" : "text-gray-900"
+                                      }`} {...props} />
+                                    ),
+                                    h3: ({ node, ...props }) => (
+                                      <h3 className={`mt-2 sm:mt-2.5 mb-0.5 sm:mb-1 text-base font-bold leading-[1.3] sm:leading-[1.25] ${
+                                        theme === "dark" ? "text-white" : "text-gray-900"
+                                      }`} {...props} />
+                                    ),
+                                    code: ({ node, className, ...props }: any) => {
+                                      const isInline = !className?.includes('language-');
+                                      return isInline ? (
+                                        <code className="bg-gray-100 text-gray-900 px-1.5 py-0.5 rounded text-sm font-mono" {...props} />
+                                      ) : (
+                                        <code className="block bg-gray-900 text-gray-100 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm font-mono overflow-x-auto my-1.5 sm:my-2" {...props} />
+                                      );
+                                    },
+                                  }}
+                                >
+                                  {streamingContent || " "}
+                                </ReactMarkdown>
+                                {/* Smooth cursor indicator while streaming */}
+                                <span className="inline-block w-0.5 h-4 bg-current opacity-60 ml-0.5 animate-pulse"></span>
                              </div>
                         </article>
                      </div>
-                     <div className="flex-shrink-0 ml-3 pt-5">
-                        {/* Assistant avatar - free like Siri, no container */}
+                     <div className="flex-shrink-0 ml-2 sm:ml-3 pt-3 sm:pt-4">
+                        {/* Assistant avatar */}
                         <VIIMAnimation state={state} size="custom" customSize={24} container="none" visualStyle="particles" audioStream={null} />
                      </div>
                  </div>
             )}
 
-          {assistantStatusText && (
-            <div className="assistant-status">{assistantStatusText}</div>
+          {/* Clean loading state - show when waiting for first token */}
+          {assistantStatusText && !streamingContent && (
+            <div className={`flex w-full justify-start py-3 sm:py-4 px-3 ${
+              theme === "light" ? "bg-gray-50/60" : ""
+            }`}>
+              <div className="flex flex-col gap-2 sm:gap-3 w-full max-w-4xl">
+                <article className={`bg-transparent px-2 ${
+                  theme === "dark" ? "text-white" : "text-gray-900"
+                }`}>
+                  <div className={`text-sm ${
+                    theme === "dark" ? "text-gray-400" : "text-gray-500"
+                  }`}>
+                    {assistantStatusText}
+                  </div>
+                </article>
+              </div>
+              <div className="flex-shrink-0 ml-2 sm:ml-3 pt-3 sm:pt-4">
+                <VIIMAnimation state={state} size="custom" customSize={24} container="none" visualStyle="particles" audioStream={null} />
+              </div>
+            </div>
           )}
 
           {!hasActivatedOnce && (
@@ -1414,14 +1452,14 @@ export function NeuralBox({
         </div>
       </div>
 
-      {/* Vault Autocomplete */}
-      {autocomplete.isOpen && (
-        <VaultAutocomplete
-          items={autocomplete.items}
-          selectedIndex={autocomplete.selectedIndex}
-          position={autocomplete.position}
-          onSelect={autocomplete.onSelect}
-          onClose={autocomplete.onClose}
+      {/* Plus Mention (+) Autocomplete */}
+      {plusMention.isOpen && (
+        <PlusMentionAutocomplete
+          items={plusMention.items}
+          selectedIndex={plusMention.selectedIndex}
+          position={plusMention.position}
+          onSelect={plusMention.onSelect}
+          onClose={plusMention.onClose}
         />
       )}
 
@@ -1571,11 +1609,11 @@ export function NeuralBox({
                         : "text-gray-900 placeholder:text-gray-500"
                     }`}
                     onKeyDown={(e) => {
-                      // Handle autocomplete navigation first
-                      autocomplete.onKeyDown(e);
+                      // Handle plus mention autocomplete navigation first
+                      plusMention.onKeyDown(e);
                       
                       // If autocomplete didn't handle it, check for Enter to submit
-                      if (e.key === "Enter" && !e.shiftKey && voiceGestureState === "idle" && !autocomplete.isOpen) {
+                      if (e.key === "Enter" && !e.shiftKey && voiceGestureState === "idle" && !plusMention.isOpen) {
                         e.preventDefault();
                         handleTextSubmit();
                       }

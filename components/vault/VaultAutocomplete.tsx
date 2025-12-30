@@ -1,7 +1,14 @@
+/**
+ * @deprecated Use PlusMentionAutocomplete instead
+ * This file is kept for backwards compatibility but will be removed in a future version.
+ * 
+ * Plus mention (+) is a prompt-native invocation operator for intelligence.
+ */
+
 "use client";
 
 import { FileText, Folder, User } from "lucide-react";
-import type { VaultItem } from "@/hooks/useVaultAutocomplete";
+import type { VaultItem } from "@/hooks/usePlusMentionAutocomplete";
 
 interface VaultAutocompleteProps {
   items: VaultItem[];
@@ -11,6 +18,9 @@ interface VaultAutocompleteProps {
   onClose: () => void;
 }
 
+/**
+ * @deprecated Use PlusMentionAutocomplete from @/components/vault/PlusMentionAutocomplete
+ */
 export function VaultAutocomplete({
   items,
   selectedIndex,
@@ -64,12 +74,12 @@ export function VaultAutocomplete({
       
       {/* Dropdown */}
       <div
-        className="fixed z-50 w-72 rounded-lg border border-gray-200 bg-white shadow-xl"
+        className="fixed z-50 w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl"
         style={{ left: position.x, top: position.y }}
       >
         <div className="py-2">
-          <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            +Vault
+          <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Plus mention (+)
           </div>
           
           <div className="max-h-64 overflow-y-auto">
