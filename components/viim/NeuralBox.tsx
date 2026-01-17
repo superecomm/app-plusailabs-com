@@ -796,13 +796,12 @@ export function NeuralBox({
                  await handleLLMRequest(modelId, `${text}\n\nTool Results:\n${toolResultsText}`, followUpReqId);
                  accumulatedToolCallsRef.current = [];
                  return;
-               } else {
-                 // Clear incomplete tool calls if no complete ones
-                 accumulatedToolCallsRef.current = [];
-               }
                } catch (error) {
                  console.error('Tool execution error:', error);
                }
+             } else {
+               // Clear incomplete tool calls if no complete ones
+               accumulatedToolCallsRef.current = [];
              }
              
              // Finalization guard: only append if not already finalized
