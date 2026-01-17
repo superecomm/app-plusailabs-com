@@ -176,7 +176,11 @@ async function callLLMEndpoint(
     }
 
     const data = await response.json();
-    return { text: data.text ?? "", status: response.status };
+    return { 
+      text: data.text ?? "", 
+      status: response.status,
+      toolCalls: data.toolCalls // Pass tool calls through
+    };
   } catch (error: any) {
     if (error.name === 'AbortError') {
         return { error: "Request aborted" };

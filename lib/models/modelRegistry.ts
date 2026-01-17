@@ -14,6 +14,7 @@ export interface ModelResponse {
   error?: string;
   status?: number;
   errorCategory?: LLMErrorCategory;
+  toolCalls?: any[]; // Tool calls from LLM responses
 }
 
 export interface Model {
