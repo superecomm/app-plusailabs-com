@@ -8,6 +8,9 @@ import type { ModelResponse } from "./modelRegistry";
 interface LLMOptions {
   onToken?: (token: string) => void;
   signal?: AbortSignal;
+  imageUrl?: string;
+  tools?: any[];
+  location?: { lat: number; lng: number } | null;
 }
 
 export type LLMErrorCategory = 
@@ -184,9 +187,17 @@ async function callLLMEndpoint(
 }
 
 export async function processGPT(text: string, options?: LLMOptions): Promise<ModelResponse> {
+  const payload: any = { prompt: text, model: "gpt-4o-mini" };
+  if (options?.imageUrl) {
+    payload.imageUrl = options.imageUrl;
+    payload.model = "gpt-4o"; // Use vision-capable model
+  }
+  if (options?.tools) {
+    payload.tools = options.tools;
+  }
   return callLLMEndpoint(
     "/api/llm/openai",
-    { prompt: text, model: "gpt-4o-mini" },
+    payload,
     "GPT-5.1",
     options
   );
@@ -220,9 +231,13 @@ export async function processSonnet(text: string, options?: LLMOptions): Promise
 }
 
 export async function processGemini(text: string, options?: LLMOptions): Promise<ModelResponse> {
+  const payload: any = { prompt: text, model: "gemini-1.5-pro-latest" };
+  if (options?.imageUrl) {
+    payload.imageUrl = options.imageUrl;
+  }
   return callLLMEndpoint(
     "/api/llm/gemini",
-    { prompt: text, model: "gemini-1.5-pro-latest" },
+    payload,
     "Gemini 1.5",
     options
   );

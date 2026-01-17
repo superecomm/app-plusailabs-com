@@ -46,6 +46,11 @@ import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useNotification } from "@/contexts/NotificationContext";
+import { storage } from "@/lib/firebase/client";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getToolsForModel } from "@/lib/tools/toolRegistry";
+import { InlineProductCard } from "@/components/chat/InlineProductCard";
+import { executeToolCalls } from "@/lib/tools/toolExecutor";
 
 const ASSISTANT_COLLAPSE_CHAR_THRESHOLD = 1200;
 const ASSISTANT_COLLAPSE_HEIGHT_THRESHOLD_PX = 280;
@@ -71,6 +76,8 @@ interface NeuralBoxProps {
   blurInput?: boolean;
   disableInteractions?: boolean;
   openAuthOnMount?: boolean;
+  location?: { lat: number; lng: number } | null;
+  locationContext?: "map" | "chat";
 }
 
 const AnimatedContent = ({
@@ -251,6 +258,8 @@ export function NeuralBox({
   disableInteractions = false,
   openAuthOnMount = false,
   theme = "light",
+  location,
+  locationContext,
 }: NeuralBoxProps) {
   const {
     state,
@@ -297,7 +306,9 @@ export function NeuralBox({
   const [vaultRefs, setVaultRefs] = useState<VaultRef[]>([]);
   const [isProcessingInput, setIsProcessingInput] = useState(false);
   const [hasActivatedOnce, setHasActivatedOnce] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Plus mention (+) autocomplete hook
   const plusMention = usePlusMentionAutocomplete(textareaRef, (token, item) => {
@@ -505,6 +516,109 @@ export function NeuralBox({
   const { isRecording, startRecording, stopRecording, getAudioStream } = shouldEnableVoice ? recorderActive : recorderFallback;
 
   // Unified LLM Request Handler with Streaming
+  const handleLLMRequestWithImage = async (modelId: string, text: string, imageUrl: string, reqId: string) => {
+    if (limitReached) return;
+
+    // Deduplication: prevent duplicate requests
+    if (processingRequestIdsRef.current.has(reqId)) {
+      console.log('[NeuralBox] Duplicate request detected, skipping:', reqId);
+      return;
+    }
+    
+    // Add to processing set
+    processingRequestIdsRef.current.add(reqId);
+
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    setAbortController(abortController);
+
+    setStreamingContent("");
+    
+    setState("speaking");
+    dispatchExec({ type: 'START_STREAMING' });
+    setRequestId(reqId);
+    markTokenActivity();
+    firstTokenSeenRef.current = false;
+    lastTokenAtRef.current = Date.now();
+    setAssistantStatusText("Analyzing image…");
+
+    try {
+        const onToken = (token: string) => {
+            if (!firstTokenSeenRef.current) {
+              firstTokenSeenRef.current = true;
+              setAssistantStatusText(null);
+            }
+            
+            lastTokenAtRef.current = Date.now();
+            markTokenActivity();
+            
+            const estimated = estimateTokenCount(token);
+            dispatchExec({ type: 'TOKEN_RECEIVED', token, estimatedTokens: estimated });
+            
+            setStreamingContent(prev => prev + token);
+        };
+        
+        const options = {
+            onToken,
+            signal: abortController.signal,
+            imageUrl // Pass image URL for vision models
+        };
+
+        const response = await processLLM(modelId, text, options);
+        
+        if (response.error) {
+            if (response.error === "Request aborted") {
+                if (streamingContent.trim()) {
+                     await appendMessageToConversation("assistant", streamingContent, {
+                        avatarType: "neural",
+                        model: modelId,
+                    });
+                }
+            } else {
+                showNotification('error', response.error || 'Failed to analyze image', []);
+                setState("idle");
+                dispatchExec({ type: 'FAIL', error: response.error || 'Image analysis failed' });
+            }
+        } else if (response.text) {
+             setUsageWarning(null);
+             
+             if (!finalizedMessageIdsRef.current.has(reqId)) {
+               await appendMessageToConversation("assistant", response.text, {
+                  avatarType: "neural",
+                  model: modelId,
+               });
+               finalizedMessageIdsRef.current.add(reqId);
+             }
+             
+             onResponse?.(response.text);
+        }
+    } catch (error) {
+        console.error("LLM Image Error:", error);
+        dispatchExec({ type: 'FAIL', error: String(error) });
+    } finally {
+        setStreamingContent("");
+        setAssistantStatusText(null);
+        firstTokenSeenRef.current = false;
+        lastTokenAtRef.current = null;
+        setRequestId(null);
+        processingRequestIdsRef.current.delete(reqId);
+        
+        if (limitReached) {
+            dispatchExec({ type: 'HIT_LIMIT' });
+        } else {
+            dispatchExec({ type: 'COMPLETE' });
+        }
+        if (!limitReached) {
+            setState("idle");
+        }
+        setIsProcessingInput(false);
+        abortControllerRef.current = null;
+    }
+  };
+
   const handleLLMRequest = async (modelId: string, text: string, reqId: string) => {
     if (limitReached) return;
 
@@ -536,7 +650,24 @@ export function NeuralBox({
 
     try {
         const onToken = (token: string) => {
-            if (!firstTokenSeenRef.current) {
+            // Check for tool call markers
+            if (token.includes('\0TOOL_CALL:')) {
+              const parts = token.split('\0TOOL_CALL:');
+              if (parts.length > 1) {
+                try {
+                  const toolCallData = JSON.parse(parts[1].split('\0')[0]);
+                  if (toolCallData.tool_calls) {
+                    accumulatedToolCallsRef.current.push(...toolCallData.tool_calls);
+                  }
+                } catch (e) {
+                  console.error('Error parsing tool call:', e);
+                }
+              }
+              // Remove tool call markers from display
+              token = token.replace(/\0TOOL_CALL:.*?\0/g, '');
+            }
+            
+            if (!firstTokenSeenRef.current && token.trim()) {
               firstTokenSeenRef.current = true;
               // Clear status text immediately when first token arrives
               setAssistantStatusText(null);
@@ -600,6 +731,48 @@ export function NeuralBox({
         } else if (response.text) {
              setUsageWarning(null);
              
+             // Execute any accumulated tool calls
+             if (accumulatedToolCallsRef.current.length > 0) {
+               try {
+                 setAssistantStatusText("Executing tools...");
+                 const results = await executeToolCalls(accumulatedToolCallsRef.current, location);
+                 setToolResults(results);
+                 
+                 // Extract product results for display
+                 const productResults = results
+                   .filter(r => r.name === 'search_explore' || r.name === 'get_product_details')
+                   .flatMap(r => r.result?.results || r.result?.product ? [r.result] : []);
+                 
+                 // Extract location results for map
+                 const locationResults = results
+                   .filter(r => r.name === 'search_nearby')
+                   .flatMap(r => r.result?.results || []);
+                 
+                 if (productResults.length > 0) {
+                   // Store product results for rendering
+                   setToolResults(productResults);
+                 }
+                 
+                 // Dispatch location results to map if in map view
+                 if (locationContext === 'map' && locationResults.length > 0) {
+                   window.dispatchEvent(new CustomEvent('toolResults', { detail: locationResults }));
+                 }
+                 
+                 // Continue LLM request with tool results
+                 const toolResultsText = results.map(r => 
+                   `Tool ${r.name} returned: ${JSON.stringify(r.result)}`
+                 ).join('\n\n');
+                 
+                 const followUpReqId = nanoid();
+                 setRequestId(followUpReqId);
+                 await handleLLMRequest(modelId, `${text}\n\nTool Results:\n${toolResultsText}`, followUpReqId);
+                 accumulatedToolCallsRef.current = [];
+                 return;
+               } catch (error) {
+                 console.error('Tool execution error:', error);
+               }
+             }
+             
              // Finalization guard: only append if not already finalized
              if (!finalizedMessageIdsRef.current.has(reqId)) {
                await appendMessageToConversation("assistant", response.text, {
@@ -651,21 +824,31 @@ export function NeuralBox({
   // Process LLM response
   const processLLM = async (modelId: string, text: string, options?: any): Promise<ModelResponse> => {
     try {
+      // Get tools for this model
+      const tools = getToolsForModel(modelId);
+      
+      // Add tools and location to options if available
+      const optionsWithTools = {
+        ...options,
+        ...(tools.length > 0 ? { tools } : {}),
+        ...(location && locationContext === "map" ? { location } : {})
+      };
+      
       switch (modelId) {
         case "all-for-one":
           // Future feature: parallel multi-model inference
           // For now, fallback to GPT
-          return await processGPT(text, options);
+          return await processGPT(text, optionsWithTools);
         case "gpt-5.1":
-          return await processGPT(text, options);
+          return await processGPT(text, optionsWithTools);
         case "gpt-5.1-code":
-          return await processGPTCode(text, options);
+          return await processGPTCode(text, optionsWithTools);
         case "claude-3.5":
-          return await processClaude(text, options);
+          return await processClaude(text, optionsWithTools);
         case "sonnet-4.5":
-          return await processSonnet(text, options);
+          return await processSonnet(text, optionsWithTools);
         case "gemini-1.5":
-          return await processGemini(text, options);
+          return await processGemini(text, optionsWithTools);
         case "elevenlabs":
           return await processElevenLabs(text);
         case "suno":
@@ -675,7 +858,7 @@ export function NeuralBox({
         case "runway":
           return await processRunway(text);
         default:
-          return await processGPT(text, options);
+          return await processGPT(text, optionsWithTools);
       }
     } catch (error) {
       console.error("Error processing LLM:", error);
@@ -791,6 +974,78 @@ export function NeuralBox({
     setVaultRefs([]);
 
     await handleLLMRequest(selectedModel, assembledPrompt, reqId);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser || !storage) {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    // Validate file size (10MB for images, 50MB for videos)
+    const maxSize = file.type.startsWith('image/') ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      showNotification(`File too large. Max size: ${file.type.startsWith('image/') ? '10MB' : '50MB'}`, 'error');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // Upload to Firebase Storage
+      const fileId = nanoid();
+      const fileExtension = file.name.split('.').pop() || 'bin';
+      const storageRef = ref(storage, `chat/${currentUser.uid}/${fileId}.${fileExtension}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // Save message with file reference
+      const messageText = textInput.trim() || (file.type.startsWith('image/') ? '📷 Image' : '🎥 Video');
+      await appendMessageToConversation("user", messageText, {
+        avatarType: "user",
+        fileRefs: [downloadURL],
+      });
+
+      // Clear input
+      setTextInput("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      // Send to LLM with image context if it's an image
+      if (file.type.startsWith('image/')) {
+        const reqId = nanoid();
+        setRequestId(reqId);
+        dispatchExec({ type: 'START_VALIDATION', requestId: reqId });
+        setState("processing");
+        if (!hasActivatedOnce) {
+          setHasActivatedOnce(true);
+          setIsActivated(true);
+          setShowGreeting(false);
+        }
+        setLastPrompt(messageText);
+        
+        // Use vision-capable model if available
+        const visionModel = selectedModel.includes('gpt-4') || selectedModel.includes('gpt-4o') 
+          ? selectedModel 
+          : 'gpt-4o-mini';
+        
+        await handleLLMRequestWithImage(visionModel, messageText, downloadURL, reqId);
+      } else {
+        // For videos, just show a message
+        showNotification('Video uploaded. Video analysis coming soon!', 'info');
+      }
+    } catch (error) {
+      console.error('File upload failed:', error);
+      showNotification('Failed to upload file. Please try again.', 'error');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleStop = () => {
@@ -1215,6 +1470,49 @@ export function NeuralBox({
                           : theme === "dark" ? "text-white" : "text-gray-900"
                       }`}
                     >
+                      {/* Display file attachments */}
+                      {entry.fileRefs && entry.fileRefs.length > 0 && (
+                        <div className="mb-3 space-y-2">
+                          {entry.fileRefs.map((fileUrl, idx) => {
+                            const isImage = fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) || fileUrl.includes('image');
+                            return isImage ? (
+                              <img
+                                key={idx}
+                                src={fileUrl}
+                                alt="Uploaded image"
+                                className="max-w-md rounded-lg border border-gray-300 dark:border-gray-700"
+                              />
+                            ) : (
+                              <video
+                                key={idx}
+                                src={fileUrl}
+                                controls
+                                className="max-w-md rounded-lg border border-gray-300 dark:border-gray-700"
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      {/* Display product cards from tool results */}
+                      {isAssistant && toolResults.length > 0 && entry.id === conversationHistory[conversationHistory.length - 1]?.id && (
+                        <div className="mb-3 space-y-3">
+                          {toolResults
+                            .filter((result: any) => result.results && Array.isArray(result.results))
+                            .flatMap((result: any) => result.results)
+                            .filter((item: any) => item.type === 'product' || item.type === 'drop')
+                            .map((product: any, idx: number) => (
+                              <InlineProductCard
+                                key={idx}
+                                product={product}
+                                onAskAI={() => {
+                                  setTextInput(`Tell me about ${product.title}`);
+                                  textareaRef.current?.focus();
+                                }}
+                              />
+                            ))}
+                        </div>
+                      )}
                       <div className={`space-y-1.5 sm:space-y-2 text-[15px] leading-[1.5] sm:leading-[1.6] ${
                         isUser ? "text-white" : theme === "dark" ? "text-white" : "text-gray-900"
                       }`}>
@@ -1637,16 +1935,28 @@ export function NeuralBox({
                       {currentModel?.name || "Select model"}
                     </button>
                     <button
-                      className="rounded-full p-1.5 transition hover:text-gray-900"
+                      type="button"
+                      onClick={() => {
+                        fileInputRef.current?.setAttribute('accept', 'image/*,video/*');
+                        fileInputRef.current?.setAttribute('capture', 'environment');
+                        fileInputRef.current?.click();
+                      }}
+                      className="rounded-full p-1.5 transition hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label="Camera"
-                      disabled
+                      disabled={isProcessingInput || isUploading || limitReached}
                     >
                       <Camera className="h-4 w-4" />
                     </button>
                     <button
-                      className="rounded-full p-1.5 transition hover:text-gray-900"
+                      type="button"
+                      onClick={() => {
+                        fileInputRef.current?.setAttribute('accept', 'image/*,video/*');
+                        fileInputRef.current?.removeAttribute('capture');
+                        fileInputRef.current?.click();
+                      }}
+                      className="rounded-full p-1.5 transition hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label="Photo library"
-                      disabled
+                      disabled={isProcessingInput || isUploading || limitReached}
                     >
                       <Image className="h-4 w-4" />
                     </button>
@@ -1721,6 +2031,16 @@ export function NeuralBox({
           </div>
         </div>
       )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        multiple={false}
+        onChange={handleFileSelect}
+        className="hidden"
+      />
 
       {/* ActiveIndicator removed (was a red pulsing overlay shown while active) */}
     </div>

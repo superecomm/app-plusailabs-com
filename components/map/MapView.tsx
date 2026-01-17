@@ -14,6 +14,7 @@ interface MapViewProps {
 export function MapView({ theme = "light" }: MapViewProps) {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [markers, setMarkers] = useState<any[]>([]);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
@@ -72,16 +73,47 @@ export function MapView({ theme = "light" }: MapViewProps) {
       map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
       // Add user location marker
-      new mapboxgl.Marker({ color: '#3B82F6' })
+      const userMarker = new mapboxgl.Marker({ color: '#3B82F6' })
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(map);
+      markersRef.current.push(userMarker);
 
       mapRef.current = map;
-
+      
+      // Listen for tool results from chat
+      const handleToolResults = (event: CustomEvent) => {
+        const results = event.detail;
+        if (results && Array.isArray(results)) {
+          // Clear existing markers (except user location)
+          markersRef.current.slice(1).forEach(marker => marker.remove());
+          markersRef.current = markersRef.current.slice(0, 1);
+          
+          // Add markers for items with location
+          results.forEach((item: any) => {
+            if (item.location && item.location.lat && item.location.lng) {
+              const marker = new mapboxgl.Marker({ color: '#10B981' })
+                .setLngLat([item.location.lng, item.location.lat])
+                .setPopup(new mapboxgl.Popup().setHTML(`
+                  <div class="p-2">
+                    <h3 class="font-semibold text-sm">${item.title || 'Location'}</h3>
+                    ${item.body ? `<p class="text-xs text-gray-600 mt-1">${item.body}</p>` : ''}
+                  </div>
+                `))
+                .addTo(map);
+              markersRef.current.push(marker);
+            }
+          });
+        }
+      };
+      
+      window.addEventListener('toolResults', handleToolResults as EventListener);
+      
       return () => {
+        window.removeEventListener('toolResults', handleToolResults as EventListener);
         map.remove();
         mapRef.current = null;
       };
+
     } catch (error) {
       console.error('[Map] Initialization error:', error);
     }
@@ -154,6 +186,8 @@ export function MapView({ theme = "light" }: MapViewProps) {
             forcePromptVisible={true}
             blurInput={false}
             disableInteractions={false}
+            location={userLocation}
+            locationContext="map"
           />
         </div>
       </div>

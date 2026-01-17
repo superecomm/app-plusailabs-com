@@ -3,11 +3,11 @@ import { checkUsageAllowed, logUsage } from "@/lib/usageService";
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, model = "gpt-4o-mini", system, stream = false } = await req.json();
+    const { prompt, model = "gpt-4o-mini", system, stream = false, imageUrl, tools } = await req.json();
     const userId = req.headers.get("x-user-id") || "anonymous";
 
-    if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    if (!prompt && !imageUrl) {
+      return NextResponse.json({ error: "Prompt or image is required" }, { status: 400 });
     }
 
     const guard = await checkUsageAllowed(userId);
@@ -20,6 +20,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
     }
 
+    // Build user message content
+    const userContent: any = imageUrl 
+      ? [
+          { type: "text", text: prompt || "What's in this image?" },
+          { type: "image_url", image_url: { url: imageUrl } }
+        ]
+      : prompt;
+
     if (stream) {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -28,11 +36,12 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model,
+          model: imageUrl ? "gpt-4o" : model, // Use vision model if image provided
           messages: [
             ...(system ? [{ role: "system", content: system }] : []),
-            { role: "user", content: prompt },
+            { role: "user", content: userContent },
           ],
+          ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
           temperature: 0.7,
           stream: true,
           stream_options: { include_usage: true },
@@ -77,6 +86,16 @@ export async function POST(req: NextRequest) {
                       accumulatedUsage = data.usage;
                     }
 
+                    // Handle tool calls
+                    if (data.choices?.[0]?.delta?.tool_calls) {
+                      // Send tool call info as special marker
+                      const toolCallData = JSON.stringify({
+                        type: "tool_call",
+                        tool_calls: data.choices[0].delta.tool_calls
+                      });
+                      controller.enqueue(encoder.encode(`\0TOOL_CALL:${toolCallData}\0`));
+                    }
+                    
                     if (data.choices?.[0]?.delta?.content) {
                       controller.enqueue(encoder.encode(data.choices[0].delta.content));
                     }
@@ -121,11 +140,12 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: imageUrl ? "gpt-4o" : model, // Use vision model if image provided
         messages: [
           ...(system ? [{ role: "system", content: system }] : []),
-          { role: "user", content: prompt },
+          { role: "user", content: userContent },
         ],
+        ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
         temperature: 0.7,
       }),
     });

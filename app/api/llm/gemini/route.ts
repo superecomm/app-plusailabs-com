@@ -3,11 +3,11 @@ import { checkUsageAllowed, logUsage } from "@/lib/usageService";
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, model = "gemini-1.5-flash-latest", system, stream = false } = await req.json();
+    const { prompt, model = "gemini-1.5-flash-latest", system, stream = false, imageUrl } = await req.json();
     const userId = req.headers.get("x-user-id") || "anonymous";
 
-    if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    if (!prompt && !imageUrl) {
+      return NextResponse.json({ error: "Prompt or image is required" }, { status: 400 });
     }
 
     const guard = await checkUsageAllowed(userId);
@@ -20,6 +20,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing GOOGLE_GEMINI_API_KEY" }, { status: 500 });
     }
 
+    // Build user parts
+    const userParts: any[] = [{ text: prompt || "What's in this image?" }];
+    if (imageUrl) {
+      // Fetch image and convert to base64
+      let imageBase64: string;
+      if (imageUrl.startsWith('data:')) {
+        imageBase64 = imageUrl.split(',')[1];
+      } else {
+        const imageResponse = await fetch(imageUrl);
+        const imageBlob = await imageResponse.blob();
+        imageBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(imageBlob);
+        });
+      }
+      
+      // Determine MIME type
+      const mimeType = imageUrl.includes('png') ? 'image/png' : 
+                       imageUrl.includes('gif') ? 'image/gif' : 
+                       imageUrl.includes('webp') ? 'image/webp' : 'image/jpeg';
+      
+      userParts.push({
+        inlineData: {
+          mimeType,
+          data: imageBase64
+        }
+      });
+    }
+
     if (stream) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
       
@@ -29,7 +63,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           contents: [
             ...(system ? [{ role: "system", parts: [{ text: system }] }] : []),
-            { role: "user", parts: [{ text: prompt }] },
+            { role: "user", parts: userParts },
           ],
         }),
       });
@@ -117,7 +151,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         contents: [
           ...(system ? [{ role: "system", parts: [{ text: system }] }] : []),
-          { role: "user", parts: [{ text: prompt }] },
+          { role: "user", parts: userParts },
         ],
       }),
     });
