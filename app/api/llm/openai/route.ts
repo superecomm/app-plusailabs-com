@@ -109,6 +109,10 @@ export async function POST(req: NextRequest) {
             console.error("Stream reading error", err);
             controller.error(err);
           } finally {
+             // Send stream end marker for tool calls
+             // This signals that all tool call deltas have been sent
+             controller.enqueue(encoder.encode(`\0STREAM_END\0`));
+             
              // Log usage after stream ends
              if (accumulatedUsage.prompt_tokens > 0) {
                 await logUsage({

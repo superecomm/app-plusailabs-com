@@ -652,6 +652,14 @@ export function NeuralBox({
 
     try {
         const onToken = (token: string) => {
+            // Check for stream end marker - this means all tool calls are complete
+            if (token.includes('\0STREAM_END\0')) {
+              // Mark that stream is complete, tool calls should be ready
+              console.log('[Tool Calling] Stream ended, accumulated calls:', accumulatedToolCallsRef.current);
+              // Remove marker from display
+              token = token.replace(/\0STREAM_END\0/g, '');
+            }
+            
             // Check for tool call markers
             if (token.includes('\0TOOL_CALL:')) {
               const parts = token.split('\0TOOL_CALL:');
@@ -677,11 +685,11 @@ export function NeuralBox({
                           accumulatedToolCallsRef.current[index].name = delta.function.name;
                         }
                         if (delta.function.arguments) {
+                          // Accumulate arguments character by character
                           accumulatedToolCallsRef.current[index].arguments += delta.function.arguments;
                         }
                       }
                     });
-                    console.log('[Tool Calling] Accumulated tool calls:', accumulatedToolCallsRef.current);
                   }
                 } catch (e) {
                   console.error('Error parsing tool call:', e, parts[1]);
@@ -767,32 +775,51 @@ export function NeuralBox({
                }));
              } else {
                // Execute any accumulated tool calls from streaming
-               // Validate that arguments JSON is complete before executing
+               // Wait a bit for stream to fully complete, then validate JSON
                const completeToolCalls = accumulatedToolCallsRef.current
                  .filter((tc: any) => {
-                   if (!tc || !tc.name || !tc.id) return false;
-                   
-                   // Check if arguments are complete JSON
-                   if (!tc.arguments || tc.arguments.trim().length === 0) return false;
-                   
-                   const argsStr = tc.arguments.trim();
-                   const openBraces = (argsStr.match(/{/g) || []).length;
-                   const closeBraces = (argsStr.match(/}/g) || []).length;
-                   
-                   // JSON is complete if braces match
-                   const isComplete = openBraces === closeBraces && openBraces > 0;
-                   
-                   // Try to parse to validate
-                   if (isComplete) {
-                     try {
-                       JSON.parse(argsStr);
-                       return true;
-                     } catch {
-                       return false;
-                     }
+                   if (!tc || !tc.name || !tc.id) {
+                     console.log('[Tool Calling] Filtered out incomplete:', { hasName: !!tc?.name, hasId: !!tc?.id });
+                     return false;
                    }
                    
-                   return false;
+                   // Check if arguments are complete JSON
+                   if (!tc.arguments || tc.arguments.trim().length === 0) {
+                     console.log('[Tool Calling] No arguments for:', tc.name);
+                     return false;
+                   }
+                   
+                   const argsStr = tc.arguments.trim();
+                   
+                   // More robust JSON validation
+                   const openBraces = (argsStr.match(/{/g) || []).length;
+                   const closeBraces = (argsStr.match(/}/g) || []).length;
+                   const openQuotes = (argsStr.match(/"/g) || []).length;
+                   
+                   // JSON is complete if:
+                   // 1. Braces match
+                   // 2. Quotes are even (if any)
+                   // 3. Can be parsed
+                   const bracesMatch = openBraces === closeBraces && openBraces > 0;
+                   const quotesEven = openQuotes % 2 === 0;
+                   
+                   if (bracesMatch && quotesEven) {
+                     try {
+                       JSON.parse(argsStr);
+                       console.log('[Tool Calling] Valid tool call:', tc.name, argsStr);
+                       return true;
+                     } catch (e) {
+                       console.log('[Tool Calling] JSON parse failed for:', tc.name, argsStr, e);
+                       return false;
+                     }
+                   } else {
+                     console.log('[Tool Calling] Incomplete JSON for:', tc.name, {
+                       bracesMatch,
+                       quotesEven,
+                       argsStr: argsStr.substring(0, 50) + '...'
+                     });
+                     return false;
+                   }
                  });
                toolCallsToExecute = completeToolCalls;
              }
@@ -802,7 +829,15 @@ export function NeuralBox({
              
              if (toolCallsToExecute.length > 0) {
                try {
+                 // Check if location is needed and available
+                 const needsLocation = toolCallsToExecute.some(tc => tc.name === 'search_nearby');
+                 if (needsLocation && (!location || !location.lat || !location.lng)) {
+                   console.warn('[Tool Calling] search_nearby requires location but none available');
+                   // Still try to execute, the tool will handle the error
+                 }
+                 
                  setAssistantStatusText("Executing tools...");
+                 console.log('[Tool Calling] Executing with location:', location);
                  const results = await executeToolCalls(toolCallsToExecute, location);
                  setToolResults(results);
                  
