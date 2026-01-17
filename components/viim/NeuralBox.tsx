@@ -767,13 +767,38 @@ export function NeuralBox({
                }));
              } else {
                // Execute any accumulated tool calls from streaming
-               const completeToolCalls = accumulatedToolCallsRef.current.filter(
-                 (tc: any) => tc && tc.name && tc.arguments && tc.id
-               );
+               // Validate that arguments JSON is complete before executing
+               const completeToolCalls = accumulatedToolCallsRef.current
+                 .filter((tc: any) => {
+                   if (!tc || !tc.name || !tc.id) return false;
+                   
+                   // Check if arguments are complete JSON
+                   if (!tc.arguments || tc.arguments.trim().length === 0) return false;
+                   
+                   const argsStr = tc.arguments.trim();
+                   const openBraces = (argsStr.match(/{/g) || []).length;
+                   const closeBraces = (argsStr.match(/}/g) || []).length;
+                   
+                   // JSON is complete if braces match
+                   const isComplete = openBraces === closeBraces && openBraces > 0;
+                   
+                   // Try to parse to validate
+                   if (isComplete) {
+                     try {
+                       JSON.parse(argsStr);
+                       return true;
+                     } catch {
+                       return false;
+                     }
+                   }
+                   
+                   return false;
+                 });
                toolCallsToExecute = completeToolCalls;
              }
              
              console.log('[Tool Calling] Tool calls to execute:', toolCallsToExecute);
+             console.log('[Tool Calling] All accumulated (before filter):', accumulatedToolCallsRef.current);
              
              if (toolCallsToExecute.length > 0) {
                try {

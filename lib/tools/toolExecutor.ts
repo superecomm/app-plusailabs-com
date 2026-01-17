@@ -23,11 +23,29 @@ export async function executeToolCall(
     let args: any = {};
     if (toolCall.arguments) {
       try {
-        args = typeof toolCall.arguments === 'string' 
-          ? JSON.parse(toolCall.arguments) 
-          : toolCall.arguments;
+        // Check if arguments string is valid JSON
+        const argsStr = typeof toolCall.arguments === 'string' 
+          ? toolCall.arguments.trim()
+          : JSON.stringify(toolCall.arguments);
+        
+        // Validate JSON before parsing
+        if (argsStr && argsStr.length > 0) {
+          // Check if JSON is complete (has matching braces)
+          const openBraces = (argsStr.match(/{/g) || []).length;
+          const closeBraces = (argsStr.match(/}/g) || []).length;
+          
+          if (openBraces === closeBraces && openBraces > 0) {
+            args = JSON.parse(argsStr);
+          } else {
+            console.warn('Incomplete JSON arguments, using empty object:', argsStr);
+            args = {};
+          }
+        } else {
+          args = {};
+        }
       } catch (e) {
-        console.error('Error parsing tool arguments:', e);
+        console.error('Error parsing tool arguments:', e, 'Arguments string:', toolCall.arguments);
+        // Try to extract partial arguments if possible
         args = {};
       }
     }
