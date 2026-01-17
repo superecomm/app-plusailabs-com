@@ -307,8 +307,10 @@ export function NeuralBox({
   const [isProcessingInput, setIsProcessingInput] = useState(false);
   const [hasActivatedOnce, setHasActivatedOnce] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [toolResults, setToolResults] = useState<any[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const accumulatedToolCallsRef = useRef<any[]>([]);
   
   // Plus mention (+) autocomplete hook
   const plusMention = usePlusMentionAutocomplete(textareaRef, (token, item) => {
