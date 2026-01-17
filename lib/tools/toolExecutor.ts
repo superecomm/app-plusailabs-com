@@ -19,16 +19,35 @@ export async function executeToolCall(
   location?: { lat: number; lng: number } | null
 ): Promise<ToolResult> {
   try {
-    const args = JSON.parse(toolCall.arguments);
+    // Handle different tool call structures
+    let args: any = {};
+    if (toolCall.arguments) {
+      try {
+        args = typeof toolCall.arguments === 'string' 
+          ? JSON.parse(toolCall.arguments) 
+          : toolCall.arguments;
+      } catch (e) {
+        console.error('Error parsing tool arguments:', e);
+        args = {};
+      }
+    }
+    
+    // Handle OpenAI tool call structure (function.name, function.arguments)
+    const toolName = (toolCall as any).function?.name || toolCall.name;
+    const toolArgs = (toolCall as any).function?.arguments 
+      ? (typeof (toolCall as any).function.arguments === 'string' 
+          ? JSON.parse((toolCall as any).function.arguments) 
+          : (toolCall as any).function.arguments)
+      : args;
     
     let result: any;
     
-    if (toolCall.name === "search_explore" || toolCall.name === "get_product_details") {
+    if (toolName === "search_explore" || toolName === "get_product_details") {
       // Execute explore tools
       const response = await fetch("/api/tools/explore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool: toolCall.name, parameters: args }),
+        body: JSON.stringify({ tool: toolName, parameters: toolArgs }),
       });
       
       if (!response.ok) {
@@ -36,7 +55,7 @@ export async function executeToolCall(
       }
       
       result = await response.json();
-    } else if (toolCall.name === "search_nearby") {
+    } else if (toolName === "search_nearby") {
       // Execute map tools with location
       if (!location) {
         throw new Error("Location required for search_nearby tool");
@@ -46,8 +65,8 @@ export async function executeToolCall(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          tool: toolCall.name, 
-          parameters: args,
+          tool: toolName, 
+          parameters: toolArgs,
           location 
         }),
       });
@@ -58,19 +77,23 @@ export async function executeToolCall(
       
       result = await response.json();
     } else {
-      throw new Error(`Unknown tool: ${toolCall.name}`);
+      throw new Error(`Unknown tool: ${toolName}`);
     }
     
+    const toolCallId = (toolCall as any).id || toolCall.id || 'unknown';
+    
     return {
-      tool_call_id: toolCall.id,
-      name: toolCall.name,
+      tool_call_id: toolCallId,
+      name: toolName,
       result: result,
     };
   } catch (error) {
-    console.error(`Error executing tool ${toolCall.name}:`, error);
+    const toolName = (toolCall as any).function?.name || toolCall.name || 'unknown';
+    const toolCallId = (toolCall as any).id || toolCall.id || 'unknown';
+    console.error(`Error executing tool ${toolName}:`, error);
     return {
-      tool_call_id: toolCall.id,
-      name: toolCall.name,
+      tool_call_id: toolCallId,
+      name: toolName,
       result: { error: error instanceof Error ? error.message : "Tool execution failed" },
     };
   }

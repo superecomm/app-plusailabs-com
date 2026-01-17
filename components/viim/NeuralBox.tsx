@@ -658,8 +658,29 @@ export function NeuralBox({
               if (parts.length > 1) {
                 try {
                   const toolCallData = JSON.parse(parts[1].split('\0')[0]);
-                  if (toolCallData.tool_calls) {
-                    accumulatedToolCallsRef.current.push(...toolCallData.tool_calls);
+                  if (toolCallData.tool_calls && Array.isArray(toolCallData.tool_calls)) {
+                    // Accumulate tool call deltas
+                    toolCallData.tool_calls.forEach((delta: any) => {
+                      const index = delta.index || 0;
+                      if (!accumulatedToolCallsRef.current[index]) {
+                        accumulatedToolCallsRef.current[index] = {
+                          id: delta.id || '',
+                          name: '',
+                          arguments: '',
+                        };
+                      }
+                      if (delta.id) {
+                        accumulatedToolCallsRef.current[index].id = delta.id;
+                      }
+                      if (delta.function) {
+                        if (delta.function.name) {
+                          accumulatedToolCallsRef.current[index].name = delta.function.name;
+                        }
+                        if (delta.function.arguments) {
+                          accumulatedToolCallsRef.current[index].arguments += delta.function.arguments;
+                        }
+                      }
+                    });
                   }
                 } catch (e) {
                   console.error('Error parsing tool call:', e);
@@ -734,10 +755,15 @@ export function NeuralBox({
              setUsageWarning(null);
              
              // Execute any accumulated tool calls
-             if (accumulatedToolCallsRef.current.length > 0) {
+             // Filter out incomplete tool calls (missing name or arguments)
+             const completeToolCalls = accumulatedToolCallsRef.current.filter(
+               (tc: any) => tc && tc.name && tc.arguments
+             );
+             
+             if (completeToolCalls.length > 0) {
                try {
                  setAssistantStatusText("Executing tools...");
-                 const results = await executeToolCalls(accumulatedToolCallsRef.current, location);
+                 const results = await executeToolCalls(completeToolCalls, location);
                  setToolResults(results);
                  
                  // Extract product results for display
@@ -770,6 +796,10 @@ export function NeuralBox({
                  await handleLLMRequest(modelId, `${text}\n\nTool Results:\n${toolResultsText}`, followUpReqId);
                  accumulatedToolCallsRef.current = [];
                  return;
+               } else {
+                 // Clear incomplete tool calls if no complete ones
+                 accumulatedToolCallsRef.current = [];
+               }
                } catch (error) {
                  console.error('Tool execution error:', error);
                }
