@@ -159,7 +159,19 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
+    const message = data?.choices?.[0]?.message;
+    const text = message?.content?.trim() ?? "";
+    
+    // Handle tool calls in non-streaming response
+    const toolCalls = message?.tool_calls;
+    if (toolCalls && toolCalls.length > 0) {
+      // Return tool calls in the response
+      return NextResponse.json({ 
+        text, 
+        toolCalls,
+        raw: data 
+      });
+    }
 
     const promptTokens = data?.usage?.prompt_tokens ?? 0;
     const completionTokens = data?.usage?.completion_tokens ?? 0;

@@ -661,10 +661,10 @@ export function NeuralBox({
                   if (toolCallData.tool_calls && Array.isArray(toolCallData.tool_calls)) {
                     // Accumulate tool call deltas
                     toolCallData.tool_calls.forEach((delta: any) => {
-                      const index = delta.index || 0;
+                      const index = delta.index !== undefined ? delta.index : 0;
                       if (!accumulatedToolCallsRef.current[index]) {
                         accumulatedToolCallsRef.current[index] = {
-                          id: delta.id || '',
+                          id: '',
                           name: '',
                           arguments: '',
                         };
@@ -681,9 +681,10 @@ export function NeuralBox({
                         }
                       }
                     });
+                    console.log('[Tool Calling] Accumulated tool calls:', accumulatedToolCallsRef.current);
                   }
                 } catch (e) {
-                  console.error('Error parsing tool call:', e);
+                  console.error('Error parsing tool call:', e, parts[1]);
                 }
               }
               // Remove tool call markers from display
@@ -754,16 +755,30 @@ export function NeuralBox({
         } else if (response.text) {
              setUsageWarning(null);
              
-             // Execute any accumulated tool calls
-             // Filter out incomplete tool calls (missing name or arguments)
-             const completeToolCalls = accumulatedToolCallsRef.current.filter(
-               (tc: any) => tc && tc.name && tc.arguments
-             );
+             // Check for tool calls in response (non-streaming) or accumulated (streaming)
+             let toolCallsToExecute: any[] = [];
              
-             if (completeToolCalls.length > 0) {
+             if (response.toolCalls && Array.isArray(response.toolCalls)) {
+               // Tool calls from non-streaming response
+               toolCallsToExecute = response.toolCalls.map((tc: any) => ({
+                 id: tc.id,
+                 name: tc.function?.name || tc.name,
+                 arguments: tc.function?.arguments || tc.arguments || '{}'
+               }));
+             } else {
+               // Execute any accumulated tool calls from streaming
+               const completeToolCalls = accumulatedToolCallsRef.current.filter(
+                 (tc: any) => tc && tc.name && tc.arguments && tc.id
+               );
+               toolCallsToExecute = completeToolCalls;
+             }
+             
+             console.log('[Tool Calling] Tool calls to execute:', toolCallsToExecute);
+             
+             if (toolCallsToExecute.length > 0) {
                try {
                  setAssistantStatusText("Executing tools...");
-                 const results = await executeToolCalls(completeToolCalls, location);
+                 const results = await executeToolCalls(toolCallsToExecute, location);
                  setToolResults(results);
                  
                  // Extract product results for display
@@ -858,12 +873,27 @@ export function NeuralBox({
       // Get tools for this model
       const tools = getToolsForModel(modelId);
       
+      // Convert tools to OpenAI format
+      const openAITools = tools.length > 0 ? tools.map(tool => ({
+        type: "function",
+        function: {
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: tool.function.parameters
+        }
+      })) : [];
+      
       // Add tools and location to options if available
       const optionsWithTools = {
         ...options,
-        ...(tools.length > 0 ? { tools } : {}),
+        ...(openAITools.length > 0 ? { tools: openAITools } : {}),
         ...(location && locationContext === "map" ? { location } : {})
       };
+      
+      // Debug: Log if tools are being sent
+      if (openAITools.length > 0) {
+        console.log('[Tool Calling] Sending tools to LLM:', openAITools.map(t => t.function.name));
+      }
       
       switch (modelId) {
         case "all-for-one":
