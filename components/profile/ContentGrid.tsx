@@ -25,7 +25,14 @@ export function ContentGrid() {
     
     setLoading(true);
     try {
-      const response = await fetch(`/api/content/list?filter=${filter.toLowerCase()}`);
+      // Get ID token for authentication
+      const idToken = await currentUser.getIdToken();
+      
+      const response = await fetch(`/api/content/list?filter=${filter.toLowerCase()}`, {
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setContent(data.items || []);
